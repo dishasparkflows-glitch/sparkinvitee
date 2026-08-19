@@ -8,7 +8,6 @@ import path from 'path';
 
 // In-memory store for active clients
 const sessions = new Map();
-const pendingMessages = [];
 
 // Clean up orphaned Chromium processes on restart/exit (Fixes "Browser already running" error)
 const gracefulShutdown = async () => {
@@ -109,20 +108,7 @@ export const initiateSession = async (req, res) => {
          if (msg.fromMe) {
            const messageId = msg.id?._serialized || msg.id?.id || String(msg.id);
            fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: id=${messageId}, to=${msg.to}, type=${msg.type}\n`);
-           
-           if (pendingMessages.length > 0) {
-              const val = pendingMessages.shift(); // take the oldest pending message
-              fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: Linking messageId ${messageId} to contact ${val.number} (campaign ${val.campaignId})\n`);
-              
-              const res = await Campaign.updateOne(
-                { _id: val.campaignId, 'contacts._id': val.contactId },
-                { $set: { 'contacts.$.messageId': messageId } }
-              );
-              
-              if (res.modifiedCount > 0) {
-                fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: SUCCESS - saved messageId ${messageId} for ${val.number}\n`);
-              }
-           }
+           // messageId is now saved directly in campaign.controller.js — no queue needed
          }
        } catch (err) {
          console.error('Error in message_create:', err);
@@ -148,6 +134,8 @@ export const initiateSession = async (req, res) => {
           incField = 'stats.seen';
           extraUpdateField = 'contacts.$.delivery.delivered';
         }
+        
+        if (!updateField) return;
         
         if (updateField) {
            let campaign = await Campaign.findOne({ 'contacts.messageId': messageId });
@@ -313,7 +301,23 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
     }
     
     if (sentMsg && sentMsg.id) {
-       return sentMsg.id._serialized || sentMsg.id.id || String(sentMsg.id);
+      // Use bare .id.id (e.g. "3EB0...") — this is what message_ack events also expose
+      const messageId = sentMsg.id.id || sentMsg.id._serialized || String(sentMsg.id);
+      
+      // ⚡ Save messageId to DB IMMEDIATELY — before returning — so it's ready when ACKs fire
+      if (campaignId && contactId && messageId) {
+        try {
+          await Campaign.updateOne(
+            { _id: campaignId, 'contacts._id': contactId },
+            { $set: { 'contacts.$.messageId': messageId } }
+          );
+          fs.appendFileSync('ack_log.txt', `SAVED messageId ${messageId} for contact ${contactId} in campaign ${campaignId}\n`);
+        } catch (e) {
+          fs.appendFileSync('ack_log.txt', `ERROR saving messageId ${messageId}: ${e.message}\n`);
+        }
+      }
+
+      return messageId;
     }
     return null;
   } catch (err) {

@@ -1,5 +1,4 @@
 import Campaign from '../models/Campaign.js';
-import Customer from '../models/Customer.js';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
 import fs from 'fs';
@@ -257,16 +256,23 @@ export const processCampaign = async (campaignId, campaignData) => {
                          const copiedPages = await pdfDoc.copyPages(existingPdf, [0]);
                          page = copiedPages[0];
                          pdfDoc.addPage(page);
-                       } else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
-                         let image;
-                         if (ext === '.png') {
-                           try { image = await pdfDoc.embedPng(fileBytes); } catch (e) { image = await pdfDoc.embedJpg(fileBytes); }
-                         } else {
-                           try { image = await pdfDoc.embedJpg(fileBytes); } catch (e) { image = await pdfDoc.embedPng(fileBytes); }
-                         }
-                         page = pdfDoc.addPage([image.width, image.height]);
-                         page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
-                       }
+                        } else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp') {
+                          let image;
+                          // Detect actual image type from magic bytes (don't trust extension)
+                          const isPng = fileBytes[0] === 0x89 && fileBytes[1] === 0x50; // PNG: \x89P
+                          const isJpg = fileBytes[0] === 0xFF && fileBytes[1] === 0xD8; // JPEG: \xFF\xD8
+                          
+                          if (isPng) {
+                            image = await pdfDoc.embedPng(fileBytes);
+                          } else if (isJpg) {
+                            image = await pdfDoc.embedJpg(fileBytes);
+                          } else {
+                            // Unknown format — try jpg then png
+                            try { image = await pdfDoc.embedJpg(fileBytes); } catch (e) { image = await pdfDoc.embedPng(fileBytes); }
+                          }
+                          page = pdfDoc.addPage([image.width, image.height]);
+                          page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+                        }
 
                        if (page) {
                          const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);

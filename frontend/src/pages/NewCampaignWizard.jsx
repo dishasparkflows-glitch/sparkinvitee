@@ -630,7 +630,11 @@ const NewCampaignWizard = () => {
                         >
                           {(() => {
                              const isPdf = campaignData.file ? campaignData.file.type.includes('pdf') : campaignData.existingFileUrl?.toLowerCase().endsWith('.pdf');
-                             const previewUrl = campaignData.file ? URL.createObjectURL(campaignData.file) : `${import.meta.env.VITE_API_URL}/${campaignData.existingFileUrl}`;
+                             const previewUrl = campaignData.file 
+                               ? URL.createObjectURL(campaignData.file)
+                               : campaignData.existingFileUrl?.startsWith('http')
+                                 ? campaignData.existingFileUrl
+                                 : `${import.meta.env.VITE_CF_URL || 'https://assets.npjnxt.com'}/${campaignData.existingFileUrl}`;
                              
                              return isPdf ? (
                                <object data={previewUrl} type="application/pdf" className="max-w-full max-h-full pointer-events-none" />
