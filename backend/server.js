@@ -11,7 +11,7 @@ import whatsappRoutes from './routes/whatsapp.routes.js';
 import campaignRoutes from './routes/campaign.routes.js';
 import transactionRoutes from './routes/transaction.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
-
+import uploadRoutes from './routes/upload.routes.js';
 dotenv.config();
 
 // Prevent puppeteer and whatsapp-web.js internal errors from crashing the server
@@ -40,6 +40,7 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 // Database Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/sparkinvitee')

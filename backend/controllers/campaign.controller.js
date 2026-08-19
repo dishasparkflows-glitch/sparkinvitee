@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { sendMessage } from './whatsapp.controller.js';
+import { getPresignedDownloadUrl, uploadBufferToR2, deleteMedia } from '../services/r2.service.js';
 
 export const getAllCampaigns = async (req, res) => {
   try {
@@ -40,6 +41,18 @@ export const deleteCampaign = async (req, res) => {
   try {
     const campaign = await Campaign.findByIdAndDelete(req.params.id);
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+
+    // Delete associated file from Cloudflare R2 if it exists
+    if (campaign.fileUrl && !campaign.fileUrl.startsWith('/uploads/')) {
+      try {
+        await deleteMedia(campaign.fileUrl);
+        console.log(`[R2] Deleted file for campaign ${req.params.id}: ${campaign.fileUrl}`);
+      } catch (r2Err) {
+        // Log but don't fail the deletion if R2 cleanup fails
+        console.error(`[R2] Failed to delete file ${campaign.fileUrl}:`, r2Err.message);
+      }
+    }
+
     res.json({ message: 'Campaign deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting campaign', error: error.message });
@@ -52,7 +65,7 @@ export const cancelCampaign = async (req, res) => {
     if (!oldCampaign) return res.status(404).json({ message: 'Campaign not found' });
     
     const wasInProcess = oldCampaign.status === 'In-Process';
-    const campaign = await Campaign.findByIdAndUpdate(req.params.id, { status: 'Cancelled' }, { new: true });
+    const campaign = await Campaign.findByIdAndUpdate(req.params.id, { status: 'Cancelled' }, { returnDocument: 'after' });
     
     // If it was NOT in-process, processCampaign is not running to refund it, so we must refund here
     if (!wasInProcess && oldCampaign.status !== 'Drafted') {
@@ -61,7 +74,7 @@ export const cancelCampaign = async (req, res) => {
          const user = await User.findOneAndUpdate(
             {},
             { $inc: { 'credits.available': creditsToRefund, 'credits.used': -creditsToRefund } },
-            { new: true }
+            { returnDocument: 'after' }
          );
          if (user) {
            await Transaction.create({
@@ -108,7 +121,7 @@ export const createCampaign = async (req, res) => {
       const user = await User.findOneAndUpdate(
         {},
         { $inc: { 'credits.available': -campaign.stats.creditsUsed, 'credits.used': campaign.stats.creditsUsed } },
-        { new: true }
+        { returnDocument: 'after' }
       );
       if (user) {
         await Transaction.create({
@@ -150,7 +163,7 @@ export const updateCampaign = async (req, res) => {
       invalid: 0
     };
 
-    const campaign = await Campaign.findByIdAndUpdate(req.params.id, campaignData, { new: true });
+    const campaign = await Campaign.findByIdAndUpdate(req.params.id, campaignData, { returnDocument: 'after' });
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
     
     // If status is 'In-Process', trigger the background processor
@@ -191,99 +204,145 @@ export const processCampaign = async (campaignId, campaignData) => {
         let filename = 'document.pdf';
 
         if (campaignData.fileUrl) {
-          const filePath = path.join(process.cwd(), campaignData.fileUrl);
-          if (fs.existsSync(filePath)) {
-             try {
-                const fileBytes = fs.readFileSync(filePath);
-                const pdfDoc = await PDFDocument.create();
-                let page;
+          try {
+             let fileBytes;
+             let ext;
+             let filePathForName = campaignData.fileUrl;
+             
+             let fetchUrl = campaignData.fileUrl;
+             
+             // If it's a Cloudflare R2 key (not an http URL, not a local /uploads path), generate a download URL
+             if (!fetchUrl.startsWith('http://') && !fetchUrl.startsWith('https://') && !fetchUrl.startsWith('/uploads/')) {
+                 console.log(`[R2] Generating presigned download URL for key: ${fetchUrl}`);
+                 fetchUrl = await getPresignedDownloadUrl(fetchUrl);
+                 console.log(`[R2] Got presigned URL: ${fetchUrl.substring(0, 80)}...`);
+             }
+
+             if (fetchUrl.startsWith('http://') || fetchUrl.startsWith('https://')) {
+                 console.log(`[R2] Fetching file from URL...`);
+                 const response = await fetch(fetchUrl);
+                 if (!response.ok) {
+                     const body = await response.text();
+                     throw new Error(`Failed to fetch remote file: HTTP ${response.status} ${response.statusText} — ${body.substring(0, 200)}`);
+                 }
+                 fileBytes = Buffer.from(await response.arrayBuffer());
+                 ext = path.extname(new URL(fetchUrl).pathname).toLowerCase();
+                 filePathForName = new URL(fetchUrl).pathname;
+                 console.log(`[R2] File fetched OK. Size: ${fileBytes.length} bytes, ext: ${ext}`);
+             } else {
+                 const localPath = path.join(process.cwd(), fetchUrl);
+                 if (!fs.existsSync(localPath)) throw new Error('Local file not found');
+                 fileBytes = fs.readFileSync(localPath);
+                 ext = path.extname(localPath).toLowerCase();
+                 filePathForName = localPath;
+             }
                 
-                if (filePath.toLowerCase().endsWith('.pdf')) {
-                  const existingPdf = await PDFDocument.load(fileBytes);
-                  const copiedPages = await pdfDoc.copyPages(existingPdf, [0]);
-                  page = copiedPages[0];
-                  pdfDoc.addPage(page);
-                } else {
-                  let image;
-                  if (filePath.toLowerCase().endsWith('.png')) {
-                    image = await pdfDoc.embedPng(fileBytes);
-                  } else {
-                    image = await pdfDoc.embedJpg(fileBytes);
-                  }
-                  page = pdfDoc.addPage([image.width, image.height]);
-                  page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
-                }
+                // 1. Set the fallback to the raw file
+                base64Media = fileBytes.toString('base64');
+                if (ext === '.pdf') mimeType = 'application/pdf';
+                else if (ext === '.png') mimeType = 'image/png';
+                else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+                else if (ext === '.mp4') mimeType = 'video/mp4';
+                else mimeType = 'application/octet-stream';
+                filename = campaignData.customPdfName ? `${campaignData.customPdfName}${ext}` : path.basename(filePathForName);
 
-                if (page) {
-                  const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-                  const { width, height } = page.getSize();
-                  
-                  if (campaignData.pdfCustomization && campaignData.pdfCustomization.length > 0) {
-                     for (const custom of campaignData.pdfCustomization) {
-                        let text = '';
-                        if (custom.variable === 'Name') text = contact.name || '';
-                        else if (custom.variable === 'Var 1') text = contact.var1 || '';
-                        else if (custom.variable === 'Var 2') text = contact.var2 || '';
-                        else if (custom.variable === 'Var 3') text = contact.var3 || '';
-                        else if (custom.variable === 'Var 4') text = contact.var4 || '';
-                        else if (custom.variable === 'Var 5') text = contact.var5 || '';
+                // 2. Only attempt PDF customization if explicitly requested
+                if (campaignData.pdfCustomization && campaignData.pdfCustomization.length > 0) {
+                   try {
+                       const pdfDoc = await PDFDocument.create();
+                       let page;
+                       
+                       if (ext === '.pdf') {
+                         const existingPdf = await PDFDocument.load(fileBytes);
+                         const copiedPages = await pdfDoc.copyPages(existingPdf, [0]);
+                         page = copiedPages[0];
+                         pdfDoc.addPage(page);
+                       } else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
+                         let image;
+                         if (ext === '.png') {
+                           try { image = await pdfDoc.embedPng(fileBytes); } catch (e) { image = await pdfDoc.embedJpg(fileBytes); }
+                         } else {
+                           try { image = await pdfDoc.embedJpg(fileBytes); } catch (e) { image = await pdfDoc.embedPng(fileBytes); }
+                         }
+                         page = pdfDoc.addPage([image.width, image.height]);
+                         page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+                       }
 
-                        // Frontend X/Y are percentages (0-100) from top-left.
-                        // pdf-lib origin is bottom-left.
-                        const x = (Number(custom.x) / 100) * width;
-                        const yCenter = height - ((Number(custom.y) / 100) * height);
-                        
-                        let r = 0, g = 0, b = 0;
-                        if (custom.color && custom.color.startsWith('#')) {
-                           const hex = custom.color.replace('#', '');
-                           r = parseInt(hex.substring(0,2), 16) / 255;
-                           g = parseInt(hex.substring(2,4), 16) / 255;
-                           b = parseInt(hex.substring(4,6), 16) / 255;
-                        }
+                       if (page) {
+                         const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+                         const { width, height } = page.getSize();
+                         
+                         for (const custom of campaignData.pdfCustomization) {
+                            let text = '';
+                            if (custom.variable === 'Name') text = contact.name || '';
+                            else if (custom.variable === 'Var 1') text = contact.var1 || '';
+                            else if (custom.variable === 'Var 2') text = contact.var2 || '';
+                            else if (custom.variable === 'Var 3') text = contact.var3 || '';
+                            else if (custom.variable === 'Var 4') text = contact.var4 || '';
+                            else if (custom.variable === 'Var 5') text = contact.var5 || '';
 
-                        const fontSize = custom.fontSize ? Number(custom.fontSize) : 24;
-                        const textWidth = font.widthOfTextAtSize(text, fontSize);
-                        
-                        // Frontend coordinates are the exact center of the text pill
-                        const finalX = x - (textWidth / 2);
-                        // pdf-lib draws from the baseline, which is typically 1/3 of the font size below the visual center
-                        const finalY = yCenter - (fontSize / 3);
+                            const x = (Number(custom.x) / 100) * width;
+                            const yCenter = height - ((Number(custom.y) / 100) * height);
+                            
+                            let r = 0, g = 0, b = 0;
+                            if (custom.color && custom.color.startsWith('#')) {
+                               const hex = custom.color.replace('#', '');
+                               r = parseInt(hex.substring(0,2), 16) / 255;
+                               g = parseInt(hex.substring(2,4), 16) / 255;
+                               b = parseInt(hex.substring(4,6), 16) / 255;
+                            }
 
-                        page.drawText(text, {
-                           x: finalX,
-                           y: finalY,
-                           size: fontSize,
-                           font: font,
-                           color: rgb(r, g, b)
-                        });
-                     }
-                  }
-                  
-                  base64Media = await pdfDoc.saveAsBase64();
-                  mimeType = 'application/pdf';
-                  filename = campaignData.customPdfName ? `${campaignData.customPdfName}.pdf` : 'invitation.pdf';
+                            const fontSize = custom.fontSize ? Number(custom.fontSize) : 24;
+                            const textWidth = font.widthOfTextAtSize(text, fontSize);
+                            
+                            const finalX = x - (textWidth / 2);
+                            const finalY = yCenter - (fontSize / 3);
+
+                            page.drawText(text, {
+                               x: finalX,
+                               y: finalY,
+                               size: fontSize,
+                               font: font,
+                               color: rgb(r, g, b)
+                            });
+                         }
+                         
+                         // If customization succeeds, override the raw file with the new PDF
+                         base64Media = await pdfDoc.saveAsBase64();
+                         mimeType = 'application/pdf';
+                         filename = campaignData.customPdfName ? `${campaignData.customPdfName}.pdf` : 'invitation.pdf';
+                       }
+                   } catch (pdfErr) {
+                       console.error("Error generating customized PDF, falling back to raw file:", pdfErr);
+                   }
                 }
              } catch (e) {
-                console.error("Error generating customized media:", e);
+                console.error("Error reading media file:", e);
              }
-          }
         }
 
         try {
-          await sendMessage(campaignData.customerId, contact.number, msg, base64Media, mimeType, filename, campaignId, contact._id);
+          const sentMessageId = await sendMessage(campaignData.customerId, contact.number, msg, base64Media, mimeType, filename, campaignId, contact._id);
           
-          console.log(`Sent to ${contact.number}`);
+          console.log(`Sent to ${contact.number} with messageId ${sentMessageId}`);
+
+          const updateSet = { 'contacts.$.delivery.sent': new Date() };
+          if (sentMessageId) {
+             updateSet['contacts.$.messageId'] = sentMessageId;
+          }
 
           await Campaign.findOneAndUpdate(
             { _id: campaignId, 'contacts._id': contact._id },
             {
               $inc: { 'stats.sent': 1, 'stats.inQueue': -1 },
-              $set: { 'contacts.$.delivery.sent': new Date() }
-            }
+              $set: updateSet
+            },
+            { returnDocument: 'after' }
           );
           // Credits were deducted upfront, no need to deduct here
         } catch (err) {
           console.error(`Failed to send to ${contact.number}:`, err.message);
+          fs.appendFileSync('ack_log.txt', `[${new Date().toISOString()}] Failed to send to ${contact.number}: ${err.message}\n`);
           await Campaign.findOneAndUpdate(
             { _id: campaignId, 'contacts._id': contact._id },
             {
@@ -313,7 +372,7 @@ export const processCampaign = async (campaignId, campaignData) => {
       }
     }
     
-    const updatedCampaign = await Campaign.findByIdAndUpdate(campaignId, { status: finalStatus }, { new: true });
+    const updatedCampaign = await Campaign.findByIdAndUpdate(campaignId, { status: finalStatus }, { returnDocument: 'after' });
     
     // Refund any unused credits (failed or cancelled messages)
     const creditsToRefund = updatedCampaign.stats.creditsUsed - updatedCampaign.stats.sent;
@@ -321,7 +380,7 @@ export const processCampaign = async (campaignId, campaignData) => {
       const user = await User.findOneAndUpdate(
          {},
          { $inc: { 'credits.available': creditsToRefund, 'credits.used': -creditsToRefund } },
-         { new: true }
+         { returnDocument: 'after' }
       );
       if (user) {
         await Transaction.create({
@@ -371,10 +430,18 @@ export const uploadFile = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
     
-    // Return the URL path to the frontend so it can be previewed/used
-    const fileUrl = `/uploads/${req.file.filename}`;
-    res.json({ fileUrl, originalName: req.file.originalname });
+    const { customerId } = req.body;
+    const timestamp = Date.now();
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const key = `customers/${customerId || 'system'}/campaigns/${timestamp}-${Math.random().toString(36).substring(7)}${ext}`;
+    
+    // Upload buffer to Cloudflare R2 from the backend (no CORS issues)
+    const publicUrl = await uploadBufferToR2(req.file.buffer, key, req.file.mimetype);
+    
+    console.log(`[R2] File uploaded: ${key}`);
+    res.json({ fileUrl: key, publicUrl, originalName: req.file.originalname });
   } catch (error) {
+    console.error('Error uploading file to R2:', error);
     res.status(500).json({ message: 'Error uploading file', error: error.message });
   }
 };

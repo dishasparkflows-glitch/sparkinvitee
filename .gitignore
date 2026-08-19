@@ -11,6 +11,8 @@ yarn-debug.log
 
 # Backend specific
 backend/.wwebjs_cache/
+backend/.wwebjs_auth/
+.wwebjs_auth/
 backend/ack_log.txt
 backend/uploads/
 

@@ -10,6 +10,23 @@ import path from 'path';
 const sessions = new Map();
 const pendingMessages = [];
 
+// Clean up orphaned Chromium processes on restart/exit (Fixes "Browser already running" error)
+const gracefulShutdown = async () => {
+  for (const [id, session] of sessions.entries()) {
+    if (session.client) {
+      try { await session.client.destroy(); } catch (e) {}
+    }
+  }
+};
+process.once('SIGUSR2', async () => {
+  await gracefulShutdown();
+  process.kill(process.pid, 'SIGUSR2');
+});
+process.on('SIGINT', async () => {
+  await gracefulShutdown();
+  process.exit(0);
+});
+
 export const initiateSession = async (req, res) => {
   const { customerId } = req.params;
 
@@ -35,6 +52,7 @@ export const initiateSession = async (req, res) => {
     const client = new Client({
       authStrategy: new LocalAuth({ clientId: customerId }),
       puppeteer: {
+        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         headless: true,
         protocolTimeout: 60000,
         args: [
@@ -116,12 +134,6 @@ export const initiateSession = async (req, res) => {
         const messageId = msg.id?._serialized || msg.id?.id || (typeof msg.id === 'string' ? msg.id : String(msg.id));
         fs.appendFileSync('ack_log.txt', `ACK EVENT: ack=${ack}, id=${messageId}, to=${msg.to}, from=${msg.from}\n`);
         
-        // Ignore @lid addresses for delivered/seen ONLY when they come from a @lid in the `from` field.
-        if ((ack === 2 || ack === 3) && (msg.from && msg.from.includes('@lid'))) {
-          fs.appendFileSync('ack_log.txt', `Ignoring @lid sync ack=${ack} for ${messageId}\n`);
-          return;
-        }
-        
         let updateField = null;
         let incField = null;
         let extraUpdateField = null;
@@ -190,7 +202,15 @@ export const initiateSession = async (req, res) => {
               if ((ack === 1 && !contact.delivery?.sent) || 
                   (ack === 2 && !contact.delivery?.delivered) || 
                   (ack === 3 && !contact.delivery?.seen)) {
-                  await Campaign.updateOne({ _id: campaign._id, 'contacts._id': contact._id }, updateDoc);
+                  fs.appendFileSync('ack_log.txt', `EXECUTING updateOne for messageId ${messageId}, ack=${ack}\n`);
+                  try {
+                      const updateRes = await Campaign.updateOne({ _id: campaign._id, 'contacts._id': contact._id }, updateDoc);
+                      fs.appendFileSync('ack_log.txt', `updateOne RESULT: ${JSON.stringify(updateRes)}\n`);
+                  } catch(e) {
+                      fs.appendFileSync('ack_log.txt', `updateOne ERROR: ${e.message}\n`);
+                  }
+              } else {
+                  fs.appendFileSync('ack_log.txt', `SKIPPED updateOne for messageId ${messageId}, ack=${ack}, contact.delivery=${JSON.stringify(contact.delivery)}\n`);
               }
            }
         }
@@ -278,24 +298,24 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
       throw new Error(`Number ${cleanNumber} is not registered on WhatsApp`);
     }
 
-    // Register this number in the pending map BEFORE sending
-    if (campaignId && contactId) {
-      pendingMessages.push({ number: cleanNumber, campaignId, contactId, timestamp: Date.now() });
-      fs.appendFileSync('ack_log.txt', `PENDING: Registered ${cleanNumber} for campaign ${campaignId}\n`);
-    }
-
     let media = null;
     if (base64Media && mimeType) {
       media = new MessageMedia(mimeType, base64Media, filename || 'document.pdf');
     }
 
+    let sentMsg = null;
     if (media) {
-      await session.client.sendMessage(registered._serialized, media, { caption: text || '' });
+      sentMsg = await session.client.sendMessage(registered._serialized, media, { caption: text || '' });
     } else {
       if (text) {
-        await session.client.sendMessage(registered._serialized, text);
+        sentMsg = await session.client.sendMessage(registered._serialized, text);
       }
     }
+    
+    if (sentMsg && sentMsg.id) {
+       return sentMsg.id._serialized || sentMsg.id.id || String(sentMsg.id);
+    }
+    return null;
   } catch (err) {
     console.error('Error in sendMessage:', err);
     throw err;

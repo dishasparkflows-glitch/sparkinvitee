@@ -4,16 +4,9 @@ import * as campaignController from '../controllers/campaign.controller.js';
 
 const router = express.Router();
 
-// Multer config for file uploads (PDF, Images, CSV)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
-});
-const upload = multer({ storage });
+// Multer config — use memory storage so we can stream buffer to Cloudflare R2
+const storage = multer.memoryStorage();
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 
 router.get('/', campaignController.getAllCampaigns);
 router.get('/customer/:customerId', campaignController.getCampaignsByCustomerId);

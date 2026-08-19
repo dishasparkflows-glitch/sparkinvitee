@@ -57,7 +57,7 @@ export const updateCustomer = async (req, res) => {
     const customer = await Customer.findByIdAndUpdate(
       req.params.id, 
       req.body, 
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
     if (!customer) return res.status(404).json({ message: 'Customer not found' });
     res.json(customer);

@@ -146,10 +146,12 @@ const NewCampaignWizard = () => {
     try {
       let fileUrl = campaignData.existingFileUrl || null;
       if (campaignData.file) {
+        // Upload via backend → R2 (avoids browser CORS issues with Cloudflare)
         const formData = new FormData();
         formData.append('file', campaignData.file);
+        formData.append('customerId', campaignData.customerId);
         const uploadRes = await axios.post(`${import.meta.env.VITE_API_URL}/api/campaigns/upload-file`, formData);
-        fileUrl = uploadRes.data.fileUrl;
+        fileUrl = uploadRes.data.fileUrl; // R2 key stored in DB
       }
 
       let parsedContacts = campaignData.contacts; // Now using already parsed contacts
