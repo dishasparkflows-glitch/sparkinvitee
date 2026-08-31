@@ -103,17 +103,57 @@ export const initiateSession = async (req, res) => {
       });
     });
 
-    client.on('message_create', async (msg) => {
-       try {
-         if (msg.fromMe) {
-           const messageId = msg.id?._serialized || msg.id?.id || String(msg.id);
-           fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: id=${messageId}, to=${msg.to}, type=${msg.type}\n`);
-           // messageId is now saved directly in campaign.controller.js — no queue needed
+  client.on('message_create', async (msg) => {
+     try {
+       if (msg.fromMe) {
+         const messageId = msg.id?._serialized || msg.id?.id || String(msg.id);
+         fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: id=${messageId}, to=${msg.to}, type=${msg.type}\n`);
+         
+         // Fix for whatsapp-web.js bug where sendMessage returns undefined for media:
+         // We intercept the message_create event and save the messageId to the DB here.
+         if (msg.to) {
+           let actualNumber = msg.to.split('@')[0].split(':')[0];
+           try {
+              if (msg.to.includes('@lid')) {
+                 const msgContact = await client.getContactById(msg.to);
+                 if (msgContact && msgContact.id && msgContact.id.user) {
+                    actualNumber = msgContact.id.user;
+                 } else if (msgContact && msgContact.number) {
+                    actualNumber = msgContact.number;
+                 }
+              }
+           } catch(err) {
+              console.error("Error resolving lid in message_create", err);
+           }
+           
+           const cleanNumber = actualNumber;
+           const possibleNumbers = [cleanNumber, cleanNumber.replace(/^91/, '')];
+           
+           const campaign = await Campaign.findOne({ 
+             'contacts': {
+               $elemMatch: {
+                 number: { $in: possibleNumbers },
+                 $or: [{ messageId: null }, { messageId: { $exists: false } }]
+               }
+             }
+           }).sort({ createdAt: -1 });
+           
+           if (campaign) {
+             const contact = campaign.contacts.find(c => possibleNumbers.includes(c.number) && (!c.messageId));
+             if (contact) {
+               await Campaign.updateOne(
+                 { _id: campaign._id, 'contacts._id': contact._id },
+                 { $set: { 'contacts.$.messageId': messageId } }
+               );
+               fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: SAVED messageId ${messageId} for number ${actualNumber}\n`);
+             }
+           }
          }
-       } catch (err) {
-         console.error('Error in message_create:', err);
        }
-    });
+     } catch (err) {
+       console.error('Error in message_create:', err);
+     }
+  });
 
     client.on('message_ack', async (msg, ack) => {
       try {
@@ -143,8 +183,29 @@ export const initiateSession = async (req, res) => {
            
            if (!campaign || !contact) {
               if (msg.to) {
-                const cleanNumber = msg.to.split('@')[0].split(':')[0];
+                let actualNumber = msg.to.split('@')[0].split(':')[0];
+                try {
+                   if (msg.to.includes('@lid')) {
+                      fs.appendFileSync('ack_log.txt', `FALLBACK: Attempting to resolve @lid: ${msg.to}\n`);
+                      const msgContact = await client.getContactById(msg.to);
+                      fs.appendFileSync('ack_log.txt', `FALLBACK msgContact: ${JSON.stringify(msgContact)}\n`);
+                      if (msgContact && msgContact.id && msgContact.id.user) {
+                         actualNumber = msgContact.id.user;
+                         fs.appendFileSync('ack_log.txt', `FALLBACK Resolved via id.user: ${actualNumber}\n`);
+                      } else if (msgContact && msgContact.number) {
+                         actualNumber = msgContact.number;
+                         fs.appendFileSync('ack_log.txt', `FALLBACK Resolved via number: ${actualNumber}\n`);
+                      }
+                   }
+                } catch(err) {
+                   fs.appendFileSync('ack_log.txt', `FALLBACK Error resolving lid: ${err.message}\n`);
+                   console.error("Error resolving lid to number", err);
+                }
+                
+                const cleanNumber = actualNumber;
                 const possibleNumbers = [cleanNumber, cleanNumber.replace(/^91/, '')];
+                
+                fs.appendFileSync('ack_log.txt', `FALLBACK Searching DB for numbers: ${possibleNumbers.join(',')}\n`);
                 
                 campaign = await Campaign.findOne({ 
                   'contacts': {
@@ -157,6 +218,9 @@ export const initiateSession = async (req, res) => {
                 
                 if (campaign) {
                   contact = campaign.contacts.find(c => possibleNumbers.includes(c.number) && (!c.messageId || c.messageId === messageId));
+                  fs.appendFileSync('ack_log.txt', `FALLBACK Found contact: ${contact ? contact.number : 'null'}\n`);
+                } else {
+                  fs.appendFileSync('ack_log.txt', `FALLBACK No campaign found.\n`);
                 }
               }
            }
@@ -300,6 +364,11 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
       }
     }
     
+    fs.appendFileSync('ack_log.txt', `SEND_MESSAGE_DEBUG: sentMsg exists? ${!!sentMsg}, type: ${typeof sentMsg}\n`);
+    if (sentMsg) {
+       fs.appendFileSync('ack_log.txt', `SEND_MESSAGE_DEBUG_ID: ${JSON.stringify(sentMsg.id)}\n`);
+    }
+
     if (sentMsg && sentMsg.id) {
       // Use bare .id.id (e.g. "3EB0...") — this is what message_ack events also expose
       const messageId = sentMsg.id.id || sentMsg.id._serialized || String(sentMsg.id);
@@ -319,6 +388,8 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
 
       return messageId;
     }
+    
+    fs.appendFileSync('ack_log.txt', `SEND_MESSAGE_RETURN_NULL: sentMsg=${JSON.stringify(sentMsg)}\n`);
     return null;
   } catch (err) {
     console.error('Error in sendMessage:', err);
