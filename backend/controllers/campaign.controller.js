@@ -348,7 +348,6 @@ export const processCampaign = async (campaignId, campaignData) => {
           // Credits were deducted upfront, no need to deduct here
         } catch (err) {
           console.error(`Failed to send to ${contact.number}:`, err.message);
-          fs.appendFileSync('ack_log.txt', `[${new Date().toISOString()}] Failed to send to ${contact.number}: ${err.message}\n`);
           await Campaign.findOneAndUpdate(
             { _id: campaignId, 'contacts._id': contact._id },
             {

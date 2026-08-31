@@ -107,10 +107,7 @@ export const initiateSession = async (req, res) => {
      try {
        if (msg.fromMe) {
          const messageId = msg.id?._serialized || msg.id?.id || String(msg.id);
-         fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: id=${messageId}, to=${msg.to}, type=${msg.type}\n`);
          
-         // Fix for whatsapp-web.js bug where sendMessage returns undefined for media:
-         // We intercept the message_create event and save the messageId to the DB here.
          if (msg.to) {
            let actualNumber = msg.to.split('@')[0].split(':')[0];
            try {
@@ -145,8 +142,9 @@ export const initiateSession = async (req, res) => {
                  { _id: campaign._id, 'contacts._id': contact._id },
                  { $set: { 'contacts.$.messageId': messageId } }
                );
-               fs.appendFileSync('ack_log.txt', `MESSAGE_CREATE: SAVED messageId ${messageId} for number ${actualNumber}\n`);
+             } else {
              }
+           } else {
            }
          }
        }
@@ -158,7 +156,6 @@ export const initiateSession = async (req, res) => {
     client.on('message_ack', async (msg, ack) => {
       try {
         const messageId = msg.id?._serialized || msg.id?.id || (typeof msg.id === 'string' ? msg.id : String(msg.id));
-        fs.appendFileSync('ack_log.txt', `ACK EVENT: ack=${ack}, id=${messageId}, to=${msg.to}, from=${msg.from}\n`);
         
         let updateField = null;
         let incField = null;
@@ -186,26 +183,20 @@ export const initiateSession = async (req, res) => {
                 let actualNumber = msg.to.split('@')[0].split(':')[0];
                 try {
                    if (msg.to.includes('@lid')) {
-                      fs.appendFileSync('ack_log.txt', `FALLBACK: Attempting to resolve @lid: ${msg.to}\n`);
                       const msgContact = await client.getContactById(msg.to);
-                      fs.appendFileSync('ack_log.txt', `FALLBACK msgContact: ${JSON.stringify(msgContact)}\n`);
                       if (msgContact && msgContact.id && msgContact.id.user) {
                          actualNumber = msgContact.id.user;
-                         fs.appendFileSync('ack_log.txt', `FALLBACK Resolved via id.user: ${actualNumber}\n`);
                       } else if (msgContact && msgContact.number) {
                          actualNumber = msgContact.number;
-                         fs.appendFileSync('ack_log.txt', `FALLBACK Resolved via number: ${actualNumber}\n`);
                       }
                    }
                 } catch(err) {
-                   fs.appendFileSync('ack_log.txt', `FALLBACK Error resolving lid: ${err.message}\n`);
                    console.error("Error resolving lid to number", err);
                 }
                 
                 const cleanNumber = actualNumber;
                 const possibleNumbers = [cleanNumber, cleanNumber.replace(/^91/, '')];
                 
-                fs.appendFileSync('ack_log.txt', `FALLBACK Searching DB for numbers: ${possibleNumbers.join(',')}\n`);
                 
                 campaign = await Campaign.findOne({ 
                   'contacts': {
@@ -218,9 +209,7 @@ export const initiateSession = async (req, res) => {
                 
                 if (campaign) {
                   contact = campaign.contacts.find(c => possibleNumbers.includes(c.number) && (!c.messageId || c.messageId === messageId));
-                  fs.appendFileSync('ack_log.txt', `FALLBACK Found contact: ${contact ? contact.number : 'null'}\n`);
                 } else {
-                  fs.appendFileSync('ack_log.txt', `FALLBACK No campaign found.\n`);
                 }
               }
            }
@@ -254,15 +243,11 @@ export const initiateSession = async (req, res) => {
               if ((ack === 1 && !contact.delivery?.sent) || 
                   (ack === 2 && !contact.delivery?.delivered) || 
                   (ack === 3 && !contact.delivery?.seen)) {
-                  fs.appendFileSync('ack_log.txt', `EXECUTING updateOne for messageId ${messageId}, ack=${ack}\n`);
                   try {
                       const updateRes = await Campaign.updateOne({ _id: campaign._id, 'contacts._id': contact._id }, updateDoc);
-                      fs.appendFileSync('ack_log.txt', `updateOne RESULT: ${JSON.stringify(updateRes)}\n`);
                   } catch(e) {
-                      fs.appendFileSync('ack_log.txt', `updateOne ERROR: ${e.message}\n`);
                   }
               } else {
-                  fs.appendFileSync('ack_log.txt', `SKIPPED updateOne for messageId ${messageId}, ack=${ack}, contact.delivery=${JSON.stringify(contact.delivery)}\n`);
               }
            }
         }
@@ -364,9 +349,7 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
       }
     }
     
-    fs.appendFileSync('ack_log.txt', `SEND_MESSAGE_DEBUG: sentMsg exists? ${!!sentMsg}, type: ${typeof sentMsg}\n`);
     if (sentMsg) {
-       fs.appendFileSync('ack_log.txt', `SEND_MESSAGE_DEBUG_ID: ${JSON.stringify(sentMsg.id)}\n`);
     }
 
     if (sentMsg && sentMsg.id) {
@@ -380,16 +363,13 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
             { _id: campaignId, 'contacts._id': contactId },
             { $set: { 'contacts.$.messageId': messageId } }
           );
-          fs.appendFileSync('ack_log.txt', `SAVED messageId ${messageId} for contact ${contactId} in campaign ${campaignId}\n`);
         } catch (e) {
-          fs.appendFileSync('ack_log.txt', `ERROR saving messageId ${messageId}: ${e.message}\n`);
         }
       }
 
       return messageId;
     }
     
-    fs.appendFileSync('ack_log.txt', `SEND_MESSAGE_RETURN_NULL: sentMsg=${JSON.stringify(sentMsg)}\n`);
     return null;
   } catch (err) {
     console.error('Error in sendMessage:', err);
