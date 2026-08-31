@@ -17,10 +17,14 @@ const CampaignDetails = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  useEffect(() => {
+  const fetchCampaign = () => {
     axios.get(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`)
       .then(res => setCampaign(res.data))
       .catch(err => console.error('Error fetching campaign details:', err));
+  };
+
+  useEffect(() => {
+    fetchCampaign();
   }, [id]);
 
   if (!campaign) return <div className="p-8 text-center text-gray-500">Loading...</div>;
@@ -62,6 +66,38 @@ const CampaignDetails = () => {
   const getInitials = (name) => {
     if (!name) return 'NA';
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+
+  const handleExport = () => {
+    if (!filteredContacts || filteredContacts.length === 0) return;
+
+    const headers = ['Id', 'Name', 'Number', 'Status', 'Sent Status', 'Delivery Status', 'Seen Status'];
+    const csvRows = [headers.join(',')];
+
+    filteredContacts.forEach((c, idx) => {
+      const statusStr = getContactStatus(c.delivery);
+      const row = [
+        idx + 1,
+        `"${(c.name || '').replace(/"/g, '""')}"`,
+        `"${c.number || ''}"`,
+        `"${statusStr}"`,
+        `"${c.delivery?.sent ? formatDate(c.delivery.sent) : '-'}"`,
+        `"${c.delivery?.delivered ? formatDate(c.delivery.delivered) : '-'}"`,
+        `"${c.delivery?.seen ? formatDate(c.delivery.seen) : '-'}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Campaign_${(campaign.name || 'Export').replace(/\s+/g, '_')}_Contacts.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const customer = campaign.customerId || {};
@@ -255,10 +291,10 @@ const CampaignDetails = () => {
                   />
                 </div>
                 <div className="flex gap-3">
-                  <button className="flex items-center gap-2 px-5 py-2 bg-[#5b528b] text-white rounded-lg text-sm font-medium hover:bg-[#4a4272] transition-colors shadow-md">
+                  <button onClick={handleExport} className="flex items-center gap-2 px-5 py-2 bg-[#5b528b] text-white rounded-lg text-sm font-medium hover:bg-[#4a4272] transition-colors shadow-md">
                     <Download size={16} /> Export
                   </button>
-                  <button className="flex items-center gap-2 px-5 py-2 bg-[#5b528b] text-white rounded-lg text-sm font-medium hover:bg-[#4a4272] transition-colors shadow-md">
+                  <button onClick={fetchCampaign} className="flex items-center gap-2 px-5 py-2 bg-[#5b528b] text-white rounded-lg text-sm font-medium hover:bg-[#4a4272] transition-colors shadow-md">
                     <RefreshCw size={16} /> Refresh
                   </button>
                 </div>
