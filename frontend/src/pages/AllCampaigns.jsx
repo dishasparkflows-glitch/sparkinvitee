@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MoreVertical, Eye, Trash2, Edit, X } from 'lucide-react';
 import axios from 'axios';
+import Pagination from '../components/Pagination';
 
 const AllCampaigns = () => {
   const navigate = useNavigate();
@@ -10,6 +11,8 @@ const AllCampaigns = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   const tabs = ['All', 'Completed', 'Drafted', 'Scheduled', 'In-Process', 'Partially Failed', 'Failed', 'Cancelled'];
 
@@ -94,7 +97,7 @@ const AllCampaigns = () => {
               type="text" 
               placeholder="Search" 
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
@@ -109,7 +112,7 @@ const AllCampaigns = () => {
         {tabs.map(tab => (
           <button 
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
             className={`px-4 py-3 whitespace-nowrap font-medium transition-colors border-b-2 ${
               activeTab === tab 
                 ? 'border-[var(--color-primary)] text-[var(--color-primary)]' 
@@ -134,6 +137,7 @@ const AllCampaigns = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-gray-200 text-sm text-gray-500 uppercase tracking-wider">
+                <th className="py-3 px-4 font-medium w-12">#</th>
                 <th className="py-3 px-4 font-medium">Campaign & Customer Name</th>
                 <th className="py-3 px-4 font-medium">Type</th>
                 <th className="py-3 px-4 font-medium">Total Recipients</th>
@@ -144,8 +148,13 @@ const AllCampaigns = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredCampaigns.map((c) => (
+              {filteredCampaigns
+                .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                .map((c, index) => (
                 <tr key={c._id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/campaigns/${c._id}`)}>
+                  <td className="py-4 px-4 text-sm text-gray-400 font-medium">
+                    {(currentPage - 1) * itemsPerPage + index + 1}
+                  </td>
                   <td className="py-4 px-4">
                     <div className="font-medium text-[var(--color-primary)]">{c.name}</div>
                     <div className="text-xs text-gray-500">{c.customerId?.name || '-'}</div>
@@ -202,6 +211,15 @@ const AllCampaigns = () => {
               ))}
             </tbody>
           </table>
+          
+          <Pagination
+            currentPage={currentPage}
+            totalItems={filteredCampaigns.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={(page) => setCurrentPage(page)}
+            onItemsPerPageChange={(val) => { setItemsPerPage(val); setCurrentPage(1); }}
+            label="Campaigns"
+          />
         </div>
       )}
     </div>

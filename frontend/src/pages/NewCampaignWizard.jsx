@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Check, ArrowLeft, X, FileText, Info, FolderOpen } from 'lucide-react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import Dropdown from '../components/Dropdown';
 
 const steps = [
   { id: 1, title: 'Campaigns Type', subtitle: 'Choose a Method to Send the Campaign' },
@@ -266,16 +267,12 @@ const NewCampaignWizard = () => {
               <div className="space-y-6 max-w-xl mx-auto mt-8">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
-                  <select 
+                  <Dropdown 
                     value={campaignData.customerId}
-                    onChange={(e) => handleSelectCustomer(e.target.value)}
-                    className="w-full px-4 py-2 bg-white border border-gray-300 rounded-md focus:outline-none focus:border-[var(--color-primary)]"
-                  >
-                    <option value="" disabled>Select a customer...</option>
-                    {customers.map(c => (
-                      <option key={c._id} value={c._id}>{c.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setCampaignData({...campaignData, customerId: val})}
+                    options={customers.map(c => ({ value: c._id, label: c.name }))}
+                    placeholder="Select a customer..."
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

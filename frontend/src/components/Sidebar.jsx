@@ -1,7 +1,32 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Users, Clock, History, Wallet } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 const Sidebar = () => {
+  const [availableCredits, setAvailableCredits] = useState(0);
+
+  useEffect(() => {
+    const fetchCredits = () => {
+      try {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        if (user && user.credits) {
+          setAvailableCredits(user.credits.available || 0);
+        }
+      } catch (e) {
+        console.error('Error parsing user data', e);
+      }
+    };
+    
+    fetchCredits();
+    
+    window.addEventListener('storage', fetchCredits);
+    window.addEventListener('user-updated', fetchCredits);
+    
+    return () => {
+      window.removeEventListener('storage', fetchCredits);
+      window.removeEventListener('user-updated', fetchCredits);
+    };
+  }, []);
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Customers', path: '/customers', icon: Users },
@@ -44,7 +69,7 @@ const Sidebar = () => {
       
       <div className="p-6">
         <div className="text-sm text-gray-300 mb-1">Available Credits:</div>
-        <div className="text-xl font-bold">10,000</div>
+        <div className="text-xl font-bold">{availableCredits.toLocaleString()}</div>
       </div>
     </div>
   );

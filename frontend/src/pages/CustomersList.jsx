@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, MoreVertical, X, Eye, Edit, Trash2 } from 'lucide-react';
+import { Search, Plus, X, Eye, Edit, Trash2 } from 'lucide-react';
 import axios from 'axios';
+import ConfirmationModal from '../components/ConfirmationModal';
+import Pagination from '../components/Pagination';
 
 const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
   const [formData, setFormData] = useState({ name: '', email: '', mobile: '', address: '' });
@@ -81,6 +83,9 @@ const CustomersList = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   const menuRef = useRef(null);
 
@@ -111,15 +116,19 @@ const CustomersList = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this customer?')) {
-      try {
-        await axios.delete(`${import.meta.env.VITE_API_URL}/api/customers/${id}`);
-        setCustomers(customers.filter(c => c._id !== id));
-      } catch (err) {
-        console.error(err);
-        alert('Error deleting customer');
-      }
+  const handleDelete = (id) => {
+    setDeleteConfirm({ isOpen: true, id });
+  };
+
+  const confirmDelete = async () => {
+    const id = deleteConfirm.id;
+    if (!id) return;
+    try {
+      await axios.delete(`${import.meta.env.VITE_API_URL}/api/customers/${id}`);
+      setCustomers(customers.filter(c => c._id !== id));
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting customer');
     }
     setOpenMenuId(null);
   };
@@ -160,7 +169,7 @@ const CustomersList = () => {
               type="text" 
               placeholder="Search" 
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
@@ -181,6 +190,7 @@ const CustomersList = () => {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-gray-200 text-sm text-[#4c3963] font-semibold tracking-wider">
+              <th className="py-4 px-4 font-semibold w-12">#</th>
               <th className="py-4 px-4 font-semibold">Name</th>
               <th className="py-4 px-4 font-semibold">Contact Number</th>
               <th className="py-4 px-4 font-semibold">Campaigns</th>
@@ -190,8 +200,17 @@ const CustomersList = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredCustomers.map((c) => (
-              <tr key={c._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+            {filteredCustomers
+              .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+              .map((c, index) => (
+              <tr 
+                key={c._id} 
+                className="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+                onClick={() => navigate(`/customers/${c._id}`)}
+              >
+                <td className="py-4 px-4 text-sm text-gray-400 font-medium">
+                  {(currentPage - 1) * itemsPerPage + index + 1}
+                </td>
                 <td className="py-4 px-4 text-gray-500 font-medium text-sm">
                   {c.name}
                 </td>
@@ -223,14 +242,18 @@ const CustomersList = () => {
                 <td className="py-4 px-4 text-right relative">
                   <div className="flex items-center justify-end gap-2">
                     <button 
-                      onClick={() => navigate(`/customers/${c._id}`)} 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/customers/${c._id}`);
+                      }} 
                       className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
                       title="View"
                     >
                       <Eye size={18} />
                     </button>
                     <button 
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingCustomer(c);
                         setIsModalOpen(true);
                       }} 
@@ -240,7 +263,10 @@ const CustomersList = () => {
                       <Edit size={18} />
                     </button>
                     <button 
-                      onClick={() => handleDelete(c._id)} 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(c._id);
+                      }} 
                       className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
                       title="Delete"
                     >
@@ -261,11 +287,14 @@ const CustomersList = () => {
           </tbody>
         </table>
         
-        {customers.length > 0 && (
-          <div className="mt-6 text-sm text-[#4c3963] font-medium">
-            Displaying 1 to {customers.length} of {customers.length} Customers
-          </div>
-        )}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredCustomers.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={(page) => setCurrentPage(page)}
+          onItemsPerPageChange={(val) => { setItemsPerPage(val); setCurrentPage(1); }}
+          label="Customers"
+        />
       </div>
       
       <CustomerFormModal 
@@ -273,6 +302,15 @@ const CustomersList = () => {
         onClose={() => setIsModalOpen(false)} 
         onSave={handleSaveCustomer}
         initialData={editingCustomer}
+      />
+      
+      <ConfirmationModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, id: null })}
+        onConfirm={confirmDelete}
+        title="Delete Customer"
+        message="Are you sure you want to delete this customer? This action cannot be undone."
+        confirmText="Delete"
       />
     </div>
   );

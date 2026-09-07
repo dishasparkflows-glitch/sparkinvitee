@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, LogOut, CloudOff, Phone, Search, MoreVertical, Edit, Plus, X, Eye, Trash2 } from 'lucide-react';
 import axios from 'axios';
+import ConfirmationModal from '../components/ConfirmationModal';
 
 const CustomerDetails = () => {
   const { id } = useParams();
@@ -17,6 +18,8 @@ const CustomerDetails = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const [disconnectWarning, setDisconnectWarning] = useState(null);
 
   const tabs = ['All', 'Drafted', 'Scheduled', 'In-Process', 'Completed', 'Partially Failed', 'Failed', 'Cancelled'];
 
@@ -100,10 +103,15 @@ const CustomerDetails = () => {
 
   const handleDisconnect = async () => {
     try {
-      await axios.post(`${import.meta.env.VITE_API_URL}/api/whatsapp/disconnect/${id}`);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/whatsapp/disconnect/${id}`);
       setStatus('Disconnected');
       setQrCode(null);
       setPolling(false);
+      
+      // Show warning if remote logout failed
+      if (res.data?.warning) {
+        setDisconnectWarning(res.data.warning);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -222,7 +230,7 @@ const CustomerDetails = () => {
             <div className="flex flex-col items-center justify-center mt-2">
               {status === 'Connected' ? (
                 <button 
-                  onClick={handleDisconnect}
+                  onClick={() => setShowDisconnectConfirm(true)}
                   className="w-full bg-[#4c3963] text-white font-medium py-3 rounded-md hover:bg-opacity-90 transition-colors"
                 >
                   Disconnect
@@ -455,6 +463,34 @@ const CustomerDetails = () => {
                  Alternative Connection (Baileys)
                </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Disconnect Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDisconnectConfirm}
+        onClose={() => setShowDisconnectConfirm(false)}
+        onConfirm={handleDisconnect}
+        title="Disconnect WhatsApp"
+        message="This disconnects your WhatsApp account. You will need to scan the QR code again to reconnect."
+        confirmText="Disconnect"
+      />
+
+      {/* Warning banner if remote logout failed */}
+      {disconnectWarning && (
+        <div className="fixed bottom-6 right-6 max-w-md bg-orange-50 border border-orange-200 rounded-lg shadow-lg p-4 z-50">
+          <div className="flex items-start gap-3">
+            <div className="text-orange-500 mt-0.5">⚠️</div>
+            <div className="flex-1">
+              <div className="font-semibold text-orange-800 text-sm mb-1">Partial Disconnect</div>
+              <div className="text-xs text-orange-700">{disconnectWarning}</div>
+            </div>
+            <button 
+              onClick={() => setDisconnectWarning(null)} 
+              className="text-orange-400 hover:text-orange-600"
+            >
+              <X size={16} />
+            </button>
           </div>
         </div>
       )}

@@ -11,10 +11,22 @@ import path from 'path';
 const sessions = new Map();
 const logger = pino({ level: 'silent' });
 
+// --- Safety Guards ---
+// Tracks customers currently being unlinked to prevent late auth writes
+const unlinkingCustomers = new Set();
+// Stores reconnect setTimeout references for cancellation
+const reconnectTimers = new Map();
+
 // Custom Auth State using MongoDB
 const useMongoAuthState = async (customerId) => {
+  const custIdStr = customerId.toString();
+
   const writeData = async (data, id) => {
-    // console.log(`[BaileysAuth] Writing data for ${id}`);
+    // Guard: skip writes if this customer is being unlinked
+    if (unlinkingCustomers.has(custIdStr)) {
+      console.log(`[BaileysAuth] Skipping write for ${id} — customer ${custIdStr} is being unlinked`);
+      return;
+    }
     const jsonString = JSON.stringify(data, BufferJSON.replacer);
     await BaileysAuth.findOneAndUpdate(
       { customerId, dataId: id },
@@ -48,13 +60,19 @@ const useMongoAuthState = async (customerId) => {
           await Promise.all(ids.map(async id => {
             let value = await readData(`${type}-${id}`);
             if (type === 'app-state-sync-key' && value) {
-              value = import('@whiskeysockets/baileys').then(b => b.proto.Message.AppStateSyncKeyData.fromObject(value));
+              const b = await import('@whiskeysockets/baileys');
+              value = b.proto.Message.AppStateSyncKeyData.fromObject(value);
             }
             data[id] = value;
           }));
           return data;
         },
         set: async (data) => {
+          // Guard: skip writes if this customer is being unlinked
+          if (unlinkingCustomers.has(custIdStr)) {
+            console.log(`[BaileysAuth] Skipping key set — customer ${custIdStr} is being unlinked`);
+            return;
+          }
           const tasks = [];
           for (const category in data) {
             for (const id in data[category]) {
@@ -80,6 +98,13 @@ const useMongoAuthState = async (customerId) => {
 export const startBaileysSession = async (customerId) => {
   try {
     const custIdStr = customerId.toString();
+
+    // Guard: refuse to start if currently unlinking
+    if (unlinkingCustomers.has(custIdStr)) {
+      console.log(`[Baileys] Refusing to start session for ${custIdStr} — unlinking in progress`);
+      return { message: 'Cannot start session while unlinking is in progress', status: 'UNLINKING' };
+    }
+
     const customer = await Customer.findById(customerId);
     if (!customer) throw new Error('Customer not found');
 
@@ -88,7 +113,7 @@ export const startBaileysSession = async (customerId) => {
       if (existing.status === 'CONNECTED' || existing.status === 'QR_READY') {
         return { message: 'Session is already active or waiting for QR', status: existing.status };
       }
-      try { existing.sock.logout(); } catch(e) {}
+      try { existing.sock.end(undefined); } catch(e) {}
       sessions.delete(custIdStr);
     }
 
@@ -121,25 +146,56 @@ export const startBaileysSession = async (customerId) => {
       }
 
       if (connection === 'close') {
-        const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
-        console.log(`[Baileys] Connection closed for ${customerId}. Reconnecting: ${shouldReconnect}`);
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        const isUnlinking = unlinkingCustomers.has(custIdStr);
         
-        if (shouldReconnect) {
+        console.log(`[Baileys] Connection closed for ${custIdStr}. StatusCode: ${statusCode}, LoggedOut: ${isLoggedOut}, Unlinking: ${isUnlinking}`);
+
+        if (isUnlinking) {
+          // Being unlinked — don't reconnect, don't cleanup (unlink handler does it)
+          console.log(`[Baileys] Skipping reconnect — unlink in progress for ${custIdStr}`);
+          session.status = 'DISCONNECTED';
+          sessions.delete(custIdStr);
+          return;
+        }
+
+        if (isLoggedOut) {
+          // Remote logout from phone — clean up auth
+          console.log(`[Baileys] Remote logout detected for ${custIdStr} — cleaning up auth`);
+          session.status = 'DISCONNECTED';
+          session.qr = null;
+          sessions.delete(custIdStr);
+          
+          // Cancel any pending reconnect
+          if (reconnectTimers.has(custIdStr)) {
+            clearTimeout(reconnectTimers.get(custIdStr));
+            reconnectTimers.delete(custIdStr);
+          }
+          
+          // Mark as unlinking to prevent late auth writes during cleanup
+          unlinkingCustomers.add(custIdStr);
+          try {
+            await Customer.findByIdAndUpdate(customerId, { 'whatsapp.status': 'Disconnected' });
+            const deleteResult = await BaileysAuth.deleteMany({ customerId: new mongoose.Types.ObjectId(customerId) });
+            console.log(`[Baileys] Cleaned up ${deleteResult.deletedCount} auth records for ${custIdStr} (remote logout)`);
+          } finally {
+            unlinkingCustomers.delete(custIdStr);
+          }
+        } else {
+          // Temporary disconnect — reconnect with backoff, preserve auth
           session.status = 'INITIALIZING';
           sessions.set(custIdStr, session);
           
           const retries = session.retries || 0;
-          const waitTime = Math.min(1000 * Math.pow(2, retries), 30000); // Exponential backoff max 30s
+          const waitTime = Math.min(1000 * Math.pow(2, retries), 30000);
           session.retries = retries + 1;
           
-          setTimeout(() => startBaileysSession(customerId), waitTime);
-        } else {
-          // Logged out
-          session.status = 'DISCONNECTED';
-          session.qr = null;
-          sessions.delete(custIdStr);
-          await Customer.findByIdAndUpdate(customerId, { 'whatsapp.status': 'Disconnected' });
-          await BaileysAuth.deleteMany({ customerId }); // Clear auth on logout
+          const timer = setTimeout(() => {
+            reconnectTimers.delete(custIdStr);
+            startBaileysSession(customerId);
+          }, waitTime);
+          reconnectTimers.set(custIdStr, timer);
         }
       } else if (connection === 'open') {
         console.log(`[Baileys] Connected for customer ${customerId}`);
@@ -147,6 +203,12 @@ export const startBaileysSession = async (customerId) => {
         session.qr = null;
         session.retries = 0;
         sessions.set(custIdStr, session);
+
+        // Clear any stale reconnect timer
+        if (reconnectTimers.has(custIdStr)) {
+          clearTimeout(reconnectTimers.get(custIdStr));
+          reconnectTimers.delete(custIdStr);
+        }
 
         const mobileNo = sock.user?.id?.split(':')[0] || '';
         await Customer.findByIdAndUpdate(customerId, {
@@ -217,19 +279,90 @@ export const getBaileysStatus = async (customerId) => {
   return { status: session.status, qr: session.qr, dbStatus: customer?.whatsapp?.status };
 };
 
+// Disconnect: Full unlink — logout from WhatsApp + delete auth records
 export const disconnectBaileysSession = async (customerId) => {
-  const session = sessions.get(customerId.toString());
-  if (session && session.sock) {
-    try { session.sock.logout(); } catch(e) {}
-    sessions.delete(customerId.toString());
+  const custIdStr = customerId.toString();
+  
+  // Idempotent: if already unlinking, just return
+  if (unlinkingCustomers.has(custIdStr)) {
+    console.log(`[Baileys] Unlink already in progress for ${custIdStr}`);
+    return { message: 'Unlink already in progress', status: 'UNLINKING' };
   }
-  await Customer.findByIdAndUpdate(customerId, { 'whatsapp.status': 'Disconnected' });
-  await BaileysAuth.deleteMany({ customerId });
-  return { message: 'Session disconnected successfully' };
+
+  // Step 1: Mark as unlinking — blocks new auth writes, prevents reconnect
+  unlinkingCustomers.add(custIdStr);
+  console.log(`[Baileys] Starting unlink for customer ${custIdStr}`);
+
+  let remoteLogoutSuccess = false;
+  let warning = null;
+
+  try {
+    // Step 2: Cancel pending reconnect timers
+    if (reconnectTimers.has(custIdStr)) {
+      clearTimeout(reconnectTimers.get(custIdStr));
+      reconnectTimers.delete(custIdStr);
+      console.log(`[Baileys] Cancelled reconnect timer for ${custIdStr}`);
+    }
+
+    // Step 3: Try remote logout via Baileys
+    const session = sessions.get(custIdStr);
+    if (session && session.sock) {
+      try {
+        await session.sock.logout();
+        remoteLogoutSuccess = true;
+        console.log(`[Baileys] Remote logout successful for ${custIdStr}`);
+      } catch (logoutErr) {
+        console.error(`[Baileys] Remote logout failed for ${custIdStr}:`, logoutErr.message);
+        warning = 'Could not confirm remote logout. Please remove the linked device from your phone manually (WhatsApp > Linked Devices).';
+        // Still close the socket locally
+        try { session.sock.end(undefined); } catch(e) {}
+      }
+    }
+
+    // Step 4: Remove from in-memory sessions
+    sessions.delete(custIdStr);
+
+    // Step 5: Delete auth records scoped to this customer only
+    const deleteResult = await BaileysAuth.deleteMany({ 
+      customerId: new mongoose.Types.ObjectId(customerId) 
+    });
+    console.log(`[Baileys] Deleted ${deleteResult.deletedCount} auth records for ${custIdStr}`);
+
+    // Step 6: Update customer status
+    await Customer.findByIdAndUpdate(customerId, { 'whatsapp.status': 'Disconnected' });
+
+    const result = { 
+      message: remoteLogoutSuccess 
+        ? 'WhatsApp unlinked successfully. Scan QR code to reconnect.' 
+        : 'Local session cleared. ' + warning,
+      status: 'DISCONNECTED',
+      requiresQR: true
+    };
+
+    if (warning) {
+      result.warning = warning;
+    }
+
+    return result;
+  } catch (error) {
+    console.error(`[Baileys] Error during unlink for ${custIdStr}:`, error);
+    throw error;
+  } finally {
+    // Step 7: Always remove unlinking flag
+    unlinkingCustomers.delete(custIdStr);
+    console.log(`[Baileys] Unlink complete for ${custIdStr}`);
+  }
 };
 
 export const sendBaileysMessage = async (customerId, number, text, base64Media, mimeType, filename, campaignId, contactId) => {
-  const session = sessions.get(customerId.toString());
+  const custIdStr = customerId.toString();
+
+  // Guard: block sending if unlinking
+  if (unlinkingCustomers.has(custIdStr)) {
+    throw new Error('Cannot send message — WhatsApp connection is being unlinked');
+  }
+
+  const session = sessions.get(custIdStr);
   if (!session || session.status !== 'CONNECTED' || !session.sock) {
     throw new Error('Baileys client not connected');
   }
@@ -277,9 +410,14 @@ export const sendBaileysMessage = async (customerId, number, text, base64Media, 
   return null;
 };
 
-// Graceful shutdown helper
+// Graceful shutdown helper — preserves auth for restart
 export const shutdownBaileysSessions = async () => {
   for (const [id, session] of sessions.entries()) {
+    // Cancel reconnect timers
+    if (reconnectTimers.has(id)) {
+      clearTimeout(reconnectTimers.get(id));
+      reconnectTimers.delete(id);
+    }
     if (session.sock) {
       try { session.sock.end(undefined); } catch(e) {}
     }
