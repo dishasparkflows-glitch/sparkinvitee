@@ -3,7 +3,6 @@ const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode';
 import Customer from '../models/Customer.js';
 import Campaign from '../models/Campaign.js';
-import fs from 'fs';
 import path from 'path';
 
 // In-memory store for active clients
@@ -76,8 +75,12 @@ export const initiateSession = async (req, res) => {
       console.log(`Client is ready for customer ${customerId}`);
       sessions.set(customerId, { client, status: 'CONNECTED', qr: null });
 
+      // Extract the connected WhatsApp phone number
+      const mobileNo = client.info?.wid?.user || '';
+
       await Customer.findByIdAndUpdate(customerId, {
-        'whatsapp.status': 'Connected'
+        'whatsapp.status': 'Connected',
+        'whatsapp.mobileNo': mobileNo
       });
     });
 

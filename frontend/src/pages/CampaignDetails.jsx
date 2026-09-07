@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Search, Download, RefreshCw, LayoutGrid, Beaker,
-  MessageSquare, Clock, Send, CheckCircle2, Eye, XCircle, AlertCircle, CalendarDays, X, Users
+  MessageSquare, Clock, Send, CheckCircle2, Eye, XCircle, AlertCircle, CalendarDays, X, Users, Filter
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -12,6 +12,7 @@ const CampaignDetails = () => {
   const [activeTab, setActiveTab] = useState('All Recipient');
   const [campaign, setCampaign] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -29,12 +30,23 @@ const CampaignDetails = () => {
 
   if (!campaign) return <div className="p-8 text-center text-gray-500">Loading...</div>;
 
+  const getContactStatus = (delivery) => {
+    if (!delivery) return 'Pending';
+    if (delivery.failed || delivery.invalid) return 'Failed';
+    if (delivery.seen) return 'Seen';
+    if (delivery.delivered) return 'Delivered';
+    if (delivery.sent) return 'Sent';
+    return 'Pending';
+  };
+
   const filteredContacts = campaign.contacts.filter(c => {
     const matchesTab = activeTab === 'Test Massage' ? c.isTest : true;
     const searchLower = searchQuery.toLowerCase();
     const matchesSearch = (c.name || '').toLowerCase().includes(searchLower) ||
                           (c.number || '').toLowerCase().includes(searchLower);
-    return matchesTab && matchesSearch;
+    const contactStatus = getContactStatus(c.delivery);
+    const matchesStatus = statusFilter === 'All' || contactStatus === statusFilter;
+    return matchesTab && matchesSearch && matchesStatus;
   });
 
   const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
@@ -52,15 +64,6 @@ const CampaignDetails = () => {
     hours = hours % 12;
     hours = hours ? hours : 12; 
     return `${day}/${month}/${year}, ${hours.toString().padStart(2, '0')}:${minutes}${ampm.toLowerCase()}`;
-  };
-
-  const getContactStatus = (delivery) => {
-    if (!delivery) return 'Pending';
-    if (delivery.failed || delivery.invalid) return 'Failed';
-    if (delivery.seen) return 'Seen';
-    if (delivery.delivered) return 'Delivered';
-    if (delivery.sent) return 'Sent';
-    return 'Pending';
   };
 
   const getInitials = (name) => {
@@ -289,6 +292,22 @@ const CampaignDetails = () => {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#5b528b] shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]"
                   />
+                </div>
+                <div className="relative">
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} />
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                    className="pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#5b528b] shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] appearance-none cursor-pointer text-gray-700 font-medium"
+                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
+                  >
+                    <option value="All">All Status</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Sent">Sent</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Seen">Seen</option>
+                    <option value="Failed">Failed</option>
+                  </select>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={handleExport} className="flex items-center gap-2 px-5 py-2 bg-[#5b528b] text-white rounded-lg text-sm font-medium hover:bg-[#4a4272] transition-colors shadow-md">

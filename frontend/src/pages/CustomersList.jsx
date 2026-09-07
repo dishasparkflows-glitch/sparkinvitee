@@ -221,42 +221,32 @@ const CustomersList = () => {
                   </div>
                 </td>
                 <td className="py-4 px-4 text-right relative">
-                  <button 
-                    onClick={() => setOpenMenuId(openMenuId === c._id ? null : c._id)}
-                    className="p-1 hover:bg-gray-200 rounded-md text-gray-400 hover:text-gray-700 focus:outline-none"
-                  >
-                    <MoreVertical size={20} />
-                  </button>
-                  
-                  {openMenuId === c._id && (
-                    <div ref={menuRef} className="absolute right-8 top-10 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-10 overflow-hidden py-1">
-                      <button 
-                        onClick={() => {
-                          setOpenMenuId(null);
-                          setEditingCustomer(c);
-                          setIsModalOpen(true);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                      >
-                        Edit
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setOpenMenuId(null);
-                          navigate(`/customers/${c._id}`);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                      >
-                        View
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(c._id)}
-                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    <button 
+                      onClick={() => navigate(`/customers/${c._id}`)} 
+                      className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
+                      title="View"
+                    >
+                      <Eye size={18} />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setEditingCustomer(c);
+                        setIsModalOpen(true);
+                      }} 
+                      className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
+                      title="Edit"
+                    >
+                      <Edit size={18} />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(c._id)} 
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
+                      title="Delete"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

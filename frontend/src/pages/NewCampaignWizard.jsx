@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Check, ArrowLeft, X, FileText, Info, FolderOpen } from 'lucide-react';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 
 const steps = [
   { id: 1, title: 'Campaigns Type', subtitle: 'Choose a Method to Send the Campaign' },
@@ -97,12 +98,25 @@ const NewCampaignWizard = () => {
     const file = e.target.files[0];
     if (!file) return;
     
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target.result;
-      parseManualText(text);
-    };
-    reader.readAsText(file);
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const csv = XLSX.utils.sheet_to_csv(ws);
+        parseManualText(csv);
+      };
+      reader.readAsBinaryString(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const text = evt.target.result;
+        parseManualText(text);
+      };
+      reader.readAsText(file);
+    }
     e.target.value = null;
   };
 
@@ -122,7 +136,13 @@ const NewCampaignWizard = () => {
       .catch(err => console.error('Error fetching customers:', err));
   }, [preselectedCustomer]);
 
-  const nextStep = () => setCurrentStep(prev => Math.min(prev + 1, 5));
+  const nextStep = () => {
+    if (currentStep === 1 && (!campaignData.name || campaignData.name.trim() === '')) {
+      alert('Please enter a Campaign Name.');
+      return;
+    }
+    setCurrentStep(prev => Math.min(prev + 1, 5));
+  };
   const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 1));
   
   const handleSaveDraft = async () => {
@@ -180,6 +200,18 @@ const NewCampaignWizard = () => {
       console.error('Error saving campaign:', err);
       alert('Failed to save campaign');
     }
+  };
+
+  const downloadExampleFile = () => {
+    const csvContent = "name,phone,var1,var2,var3,var4,var5\nRahul Sharma,919876543210,Aarav & Priya,Wedding,15 December 2026,7 PM,Royal Palace Jaipur\nNeha Patel,919876543211,Aarav & Priya,Mehendi,14 December 2026,4 PM,Royal Palace Jaipur\n";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'contact_sample_file.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -246,11 +278,14 @@ const NewCampaignWizard = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Campaign Name <span className="text-red-500">*</span>
+                  </label>
                   <input 
                     type="text" 
                     placeholder="Enter Campaign Name" 
                     value={campaignData.name}
+                    required
                     onChange={(e) => setCampaignData({...campaignData, name: e.target.value})}
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[var(--color-primary)]" 
                   />
@@ -277,7 +312,7 @@ const NewCampaignWizard = () => {
                   {/* Top Section */}
                   <div className="flex justify-between items-start">
                     <div>
-                      <h3 className="font-bold text-[#4c3963] text-lg">Import CSV File Or Manual Data</h3>
+                      <h3 className="font-bold text-[#4c3963] text-lg">Import CSV/Excel File Or Manual Data</h3>
                       <p className="text-xs text-gray-500 mt-1 mb-4">Select the method for import contacts</p>
                       
                       <div className="flex gap-4">
@@ -296,7 +331,7 @@ const NewCampaignWizard = () => {
                             type="file" 
                             id="csv-upload" 
                             className="hidden" 
-                            accept=".csv, .txt"
+                            accept=".csv, .txt, .xls, .xlsx"
                             onChange={handleFileUpload}
                           />
                         </button>
@@ -304,12 +339,25 @@ const NewCampaignWizard = () => {
                     </div>
                     
                     <div className="flex gap-2">
-                      <button className="border border-gray-300 text-gray-700 px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 hover:bg-gray-50">
+                      <button 
+                        onClick={downloadExampleFile}
+                        className="border border-gray-300 text-gray-700 px-4 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 hover:bg-gray-50"
+                      >
                         Example <FileText size={16} />
                       </button>
-                      <button className="text-gray-400 border border-gray-300 rounded-full w-8 h-8 flex items-center justify-center hover:bg-gray-50">
-                        <Info size={16} />
-                      </button>
+                      <div className="relative group flex items-center">
+                        <button className="text-gray-400 border border-gray-300 rounded-full w-8 h-8 flex items-center justify-center hover:bg-gray-50 cursor-help focus:outline-none">
+                          <Info size={16} />
+                        </button>
+                        
+                        {/* Custom Tooltip */}
+                        <div className="absolute opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 top-full right-0 mt-2 w-72 bg-[#4c3963] text-white text-xs rounded-lg p-3.5 shadow-xl z-50 font-medium leading-relaxed">
+                          <p>
+                            Download the Example file to see the exact column headers required (name, phone, var1, etc.) for importing contacts from Excel or CSV.
+                          </p>
+                          <div className="absolute -top-1.5 right-3 w-3 h-3 bg-[#4c3963] transform rotate-45"></div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -592,14 +640,6 @@ const NewCampaignWizard = () => {
                   
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-gray-800 text-lg">File Preview</h3>
-                    <button className="border border-gray-300 rounded-md px-4 py-1.5 text-sm font-medium flex items-center gap-2 hover:bg-gray-50 transition-colors">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-500">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                      </svg>
-                      Download
-                    </button>
                   </div>
                   
                   <div className="flex-1 flex gap-5 overflow-hidden">
@@ -723,7 +763,7 @@ const NewCampaignWizard = () => {
                   </div>
                   <p className="text-sm text-gray-500 mb-6">Type your message to share with your Family ones.</p>
                   
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Add Country Code</label>
+                  
                   <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col focus-within:border-[var(--color-primary)] transition-colors shadow-sm">
                     <textarea 
                       className="w-full h-32 p-4 text-sm text-gray-700 focus:outline-none focus:bg-gray-50 transition-colors resize-none" 

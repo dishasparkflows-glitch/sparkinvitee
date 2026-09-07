@@ -165,56 +165,38 @@ const AllCampaigns = () => {
                   </td>
                   <td className="py-4 px-4 text-sm text-gray-500">{formatDate(c.createdAt)}</td>
                   <td className="py-4 px-4 text-right relative">
-                    <button 
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        setOpenMenuId(openMenuId === c._id ? null : c._id);
-                      }}
-                      className="p-1 hover:bg-gray-200 rounded-md text-gray-400 hover:text-gray-700 focus:outline-none"
-                    >
-                      <MoreVertical size={20} />
-                    </button>
-                    
-                    {openMenuId === c._id && (
-                      <div ref={menuRef} onClick={(e) => e.stopPropagation()} className="absolute right-8 top-10 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-10 overflow-hidden py-1">
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => navigate(`/campaigns/${c._id}`)} 
+                        className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
+                        title="View"
+                      >
+                        <Eye size={18} />
+                      </button>
+                      <button 
+                        onClick={() => navigate(`/campaigns/edit/${c._id}`)} 
+                        className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
+                        title="Edit"
+                      >
+                        <Edit size={18} />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(c._id)} 
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
+                        title="Delete"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                      {['Drafted', 'Scheduled', 'In-Process'].includes(c.status) && (
                         <button 
-                          onClick={() => {
-                            setOpenMenuId(null);
-                            navigate(`/campaigns/${c._id}`);
-                          }}
-                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                          onClick={() => handleCancel(c._id)} 
+                          className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors" 
+                          title="Cancel"
                         >
-                          <Eye size={14} />
-                          View
+                          <X size={18} />
                         </button>
-                        <button 
-                          onClick={() => {
-                            setOpenMenuId(null);
-                            navigate(`/campaigns/edit/${c._id}`);
-                          }}
-                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                        >
-                          <Edit size={14} />
-                          Edit
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(c._id)}
-                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
-                        {['Drafted', 'Scheduled', 'In-Process'].includes(c.status) && (
-                          <button 
-                            onClick={() => handleCancel(c._id)}
-                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-100"
-                          >
-                            <X size={14} />
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
