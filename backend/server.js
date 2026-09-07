@@ -12,6 +12,8 @@ import campaignRoutes from './routes/campaign.routes.js';
 import transactionRoutes from './routes/transaction.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
+import Customer from './models/Customer.js';
+import * as baileysService from './services/baileys.service.js';
 dotenv.config();
 
 // Prevent puppeteer and whatsapp-web.js internal errors from crashing the server
@@ -21,6 +23,16 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
 });
+
+// Graceful shutdown for Baileys
+const gracefulShutdown = async () => {
+  console.log('Shutting down gracefully...');
+  await baileysService.shutdownBaileysSessions();
+  process.exit(0);
+};
+process.once('SIGUSR2', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -44,7 +56,20 @@ app.use('/api/uploads', uploadRoutes);
 
 // Database Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/sparkinvitee')
-.then(() => console.log('MongoDB connected successfully'))
+.then(async () => {
+  console.log('MongoDB connected successfully');
+  if (process.env.BAILEYS_ENABLED === 'true') {
+    try {
+      const activeCustomers = await Customer.find({ 'whatsapp.status': 'Connected', 'whatsapp.provider': 'baileys' });
+      console.log(`[Baileys] Restoring ${activeCustomers.length} active sessions on boot...`);
+      for (const c of activeCustomers) {
+        baileysService.startBaileysSession(c._id).catch(err => console.error(`[Baileys] Boot error for ${c._id}:`, err));
+      }
+    } catch (err) {
+      console.error('[Baileys] Error fetching active sessions on boot:', err);
+    }
+  }
+})
 .catch(err => console.error('MongoDB connection error:', err));
 
 // Basic Route for testing

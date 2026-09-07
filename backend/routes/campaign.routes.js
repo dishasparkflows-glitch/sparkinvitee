@@ -17,7 +17,6 @@ router.put('/:id/cancel', campaignController.cancelCampaign);
 router.delete('/:id', campaignController.deleteCampaign);
 
 // Upload routes
-router.post('/upload-csv', upload.single('file'), campaignController.uploadCsv);
 router.post('/upload-file', upload.single('file'), campaignController.uploadFile);
 
 export default router;

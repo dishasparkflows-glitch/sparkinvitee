@@ -9,7 +9,8 @@ const customerSchema = new mongoose.Schema({
   whatsapp: {
     status: { type: String, enum: ['Connected', 'Disconnected'], default: 'Disconnected' },
     mobileNo: { type: String },
-    sessionData: { type: Object }
+    sessionData: { type: Object },
+    provider: { type: String, enum: ['wwebjs', 'baileys'], default: 'wwebjs' }
   }
 }, { timestamps: true });
 

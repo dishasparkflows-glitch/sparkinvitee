@@ -221,7 +221,7 @@ const CampaignDetails = () => {
                       <div className="text-xs text-gray-400 font-medium text-center px-2">PDF Document</div>
                     </div>
                   ) : (
-                    <img src={campaign.fileUrl.startsWith('http') ? campaign.fileUrl : `${import.meta.env.VITE_CF_URL || 'https://assets.npjnxt.com'}/${campaign.fileUrl}`} alt="Preview" className="h-48 object-contain rounded-lg shadow-sm" />
+                    <img src={campaign.fileUrl} alt="Preview" className="h-48 object-contain rounded-lg shadow-sm" />
                   )
                 ) : (
                   <div className="text-xs text-gray-400 py-10">No file attached</div>

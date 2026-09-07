@@ -15,6 +15,35 @@ const CreditsHistory = () => {
     });
   }, []);
 
+  const handleExport = () => {
+    if (!history || history.length === 0) return;
+
+    const headers = ['Date', 'Description', 'Debited (+)', 'Credited (-)', 'Balance'];
+    const csvRows = [headers.join(',')];
+
+    history.forEach((record) => {
+      const row = [
+        `"${new Date(record.date).toLocaleString()}"`,
+        `"${(record.description || '').replace(/"/g, '""')}"`,
+        `"${record.creditsAdded > 0 ? '+' + record.creditsAdded : '--'}"`,
+        `"${record.creditsDeducted > 0 ? '-' + record.creditsDeducted : '--'}"`,
+        `"${record.balanceAfter}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Credits_History.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 min-h-[500px]">
       <div className="flex justify-between items-center mb-6">
@@ -25,7 +54,10 @@ const CreditsHistory = () => {
             <Calendar size={18} className="mr-2" />
             <span className="text-sm">All Time History</span>
           </div>
-          <button className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md hover:bg-opacity-90">
+          <button 
+            onClick={handleExport}
+            className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md hover:bg-opacity-90"
+          >
             Export History
           </button>
         </div>

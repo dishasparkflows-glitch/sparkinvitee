@@ -12,6 +12,7 @@ const CustomerDetails = () => {
   const [qrCode, setQrCode] = useState(null);
   const [status, setStatus] = useState('Disconnected'); // Disconnected, INITIALIZING, QR_READY, Connected
   const [polling, setPolling] = useState(false);
+  const [showProviderModal, setShowProviderModal] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -84,11 +85,12 @@ const CustomerDetails = () => {
     return () => clearInterval(interval);
   }, [polling, id]);
 
-  const handleConnectDevice = async () => {
+  const handleConnectDevice = async (provider) => {
+    setShowProviderModal(false);
     setStatus('INITIALIZING');
     setPolling(true);
     try {
-      await axios.post(`${import.meta.env.VITE_API_URL}/api/whatsapp/initiate/${id}`);
+      await axios.post(`${import.meta.env.VITE_API_URL}/api/whatsapp/initiate/${id}`, { provider: provider || 'wwebjs' });
     } catch (err) {
       console.error(err);
       setStatus('Disconnected');
@@ -246,7 +248,7 @@ const CustomerDetails = () => {
                 </div>
               ) : (
                 <button 
-                  onClick={handleConnectDevice}
+                  onClick={() => setShowProviderModal(true)}
                   className="w-full bg-[#4c3963] text-white font-medium py-3 rounded-md hover:bg-opacity-90 transition-colors"
                 >
                   Connect
@@ -423,6 +425,36 @@ const CustomerDetails = () => {
             <p className="text-xs text-gray-400 mt-6 text-center font-medium">
               Keep your phone connected to the internet during this process.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Provider Selection Modal */}
+      {showProviderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center relative animate-fade-in-up">
+            <button 
+              onClick={() => setShowProviderModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-colors"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-xl font-bold text-[#4c3963] mb-4">Select Provider</h3>
+            <p className="text-sm text-gray-500 text-center mb-6">Choose the connection method for WhatsApp.</p>
+            <div className="flex flex-col gap-3 w-full">
+               <button 
+                 onClick={() => handleConnectDevice('wwebjs')}
+                 className="w-full bg-[#4c3963] text-white font-medium py-3 rounded-md hover:bg-opacity-90 transition-colors"
+               >
+                 Standard Connection (wwebjs)
+               </button>
+               <button 
+                 onClick={() => handleConnectDevice('baileys')}
+                 className="w-full bg-indigo-50 text-indigo-700 font-medium py-3 rounded-md hover:bg-indigo-100 border border-indigo-200 transition-colors"
+               >
+                 Alternative Connection (Baileys)
+               </button>
+            </div>
           </div>
         </div>
       )}

@@ -4,6 +4,8 @@ import qrcode from 'qrcode';
 import Customer from '../models/Customer.js';
 import Campaign from '../models/Campaign.js';
 import path from 'path';
+import * as baileysService from '../services/baileys.service.js';
+import { handleMessageCreate, handleMessageAck } from '../services/whatsappHandlers.js';
 
 // In-memory store for active clients
 const sessions = new Map();
@@ -31,6 +33,21 @@ export const initiateSession = async (req, res) => {
   try {
     const customer = await Customer.findById(customerId);
     if (!customer) return res.status(404).json({ message: 'Customer not found' });
+
+    const provider = req.body.provider || customer.whatsapp?.provider || 'wwebjs';
+    const isBaileysEnabled = process.env.BAILEYS_ENABLED === 'true';
+
+    if (provider === 'baileys' && isBaileysEnabled) {
+      if (customer.whatsapp?.provider !== 'baileys') {
+        await Customer.findByIdAndUpdate(customerId, { 'whatsapp.provider': 'baileys' });
+      }
+      const response = await baileysService.startBaileysSession(customerId);
+      return res.json(response);
+    }
+
+    if (customer.whatsapp?.provider !== 'wwebjs') {
+      await Customer.findByIdAndUpdate(customerId, { 'whatsapp.provider': 'wwebjs' });
+    }
 
     if (sessions.has(customerId)) {
       const existingClient = sessions.get(customerId);
@@ -107,156 +124,17 @@ export const initiateSession = async (req, res) => {
     });
 
   client.on('message_create', async (msg) => {
-     try {
-       if (msg.fromMe) {
-         const messageId = msg.id?._serialized || msg.id?.id || String(msg.id);
-         
-         if (msg.to) {
-           let actualNumber = msg.to.split('@')[0].split(':')[0];
-           try {
-              if (msg.to.includes('@lid')) {
-                 const msgContact = await client.getContactById(msg.to);
-                 if (msgContact && msgContact.id && msgContact.id.user) {
-                    actualNumber = msgContact.id.user;
-                 } else if (msgContact && msgContact.number) {
-                    actualNumber = msgContact.number;
-                 }
-              }
-           } catch(err) {
-              console.error("Error resolving lid in message_create", err);
-           }
-           
-           const cleanNumber = actualNumber;
-           const possibleNumbers = [cleanNumber, cleanNumber.replace(/^91/, '')];
-           
-           const campaign = await Campaign.findOne({ 
-             'contacts': {
-               $elemMatch: {
-                 number: { $in: possibleNumbers },
-                 $or: [{ messageId: null }, { messageId: { $exists: false } }]
-               }
-             }
-           }).sort({ createdAt: -1 });
-           
-           if (campaign) {
-             const contact = campaign.contacts.find(c => possibleNumbers.includes(c.number) && (!c.messageId));
-             if (contact) {
-               await Campaign.updateOne(
-                 { _id: campaign._id, 'contacts._id': contact._id },
-                 { $set: { 'contacts.$.messageId': messageId } }
-               );
-             } else {
-             }
-           } else {
-           }
-         }
-       }
-     } catch (err) {
-       console.error('Error in message_create:', err);
+     if (msg.fromMe) {
+       const messageId = msg.id?._serialized || msg.id?.id || String(msg.id);
+       const getContactIdFunc = async (lid) => { return await client.getContactById(lid); };
+       await handleMessageCreate(msg.to, messageId, getContactIdFunc);
      }
   });
 
     client.on('message_ack', async (msg, ack) => {
-      try {
-        const messageId = msg.id?._serialized || msg.id?.id || (typeof msg.id === 'string' ? msg.id : String(msg.id));
-        
-        let updateField = null;
-        let incField = null;
-        let extraUpdateField = null;
-        
-        if (ack === 1) {
-          updateField = 'contacts.$.delivery.sent';
-        } else if (ack === 2) {
-          updateField = 'contacts.$.delivery.delivered';
-          incField = 'stats.delivered';
-        } else if (ack === 3) {
-          updateField = 'contacts.$.delivery.seen';
-          incField = 'stats.seen';
-          extraUpdateField = 'contacts.$.delivery.delivered';
-        }
-        
-        if (!updateField) return;
-        
-        if (updateField) {
-           let campaign = await Campaign.findOne({ 'contacts.messageId': messageId });
-           let contact = campaign ? campaign.contacts.find(c => c.messageId === messageId) : null;
-           
-           if (!campaign || !contact) {
-              if (msg.to) {
-                let actualNumber = msg.to.split('@')[0].split(':')[0];
-                try {
-                   if (msg.to.includes('@lid')) {
-                      const msgContact = await client.getContactById(msg.to);
-                      if (msgContact && msgContact.id && msgContact.id.user) {
-                         actualNumber = msgContact.id.user;
-                      } else if (msgContact && msgContact.number) {
-                         actualNumber = msgContact.number;
-                      }
-                   }
-                } catch(err) {
-                   console.error("Error resolving lid to number", err);
-                }
-                
-                const cleanNumber = actualNumber;
-                const possibleNumbers = [cleanNumber, cleanNumber.replace(/^91/, '')];
-                
-                
-                campaign = await Campaign.findOne({ 
-                  'contacts': {
-                    $elemMatch: {
-                      number: { $in: possibleNumbers },
-                      $or: [{ messageId: null }, { messageId: { $exists: false } }, { messageId: messageId }]
-                    }
-                  }
-                }).sort({ createdAt: -1 });
-                
-                if (campaign) {
-                  contact = campaign.contacts.find(c => possibleNumbers.includes(c.number) && (!c.messageId || c.messageId === messageId));
-                } else {
-                }
-              }
-           }
-           
-           if (campaign && contact) {
-              if (!contact.messageId) {
-                await Campaign.updateOne(
-                  { _id: campaign._id, 'contacts._id': contact._id },
-                  { $set: { 'contacts.$.messageId': messageId } }
-                );
-              }
-
-              const updateDoc = {
-                $set: { [updateField]: new Date() }
-              };
-              
-              if (extraUpdateField && !contact.delivery?.delivered) {
-                 updateDoc.$set[extraUpdateField] = new Date();
-                 if (incField) {
-                     updateDoc.$inc = { 
-                         [incField]: 1,
-                         'stats.delivered': 1
-                     };
-                 }
-              } else if (incField) {
-                 if ((ack === 2 && !contact.delivery?.delivered) || (ack === 3 && !contact.delivery?.seen)) {
-                     updateDoc.$inc = { [incField]: 1 };
-                 }
-              }
-
-              if ((ack === 1 && !contact.delivery?.sent) || 
-                  (ack === 2 && !contact.delivery?.delivered) || 
-                  (ack === 3 && !contact.delivery?.seen)) {
-                  try {
-                      const updateRes = await Campaign.updateOne({ _id: campaign._id, 'contacts._id': contact._id }, updateDoc);
-                  } catch(e) {
-                  }
-              } else {
-              }
-           }
-        }
-      } catch (err) {
-        console.error('Error handling message_ack:', err);
-      }
+      const messageId = msg.id?._serialized || msg.id?.id || (typeof msg.id === 'string' ? msg.id : String(msg.id));
+      const getContactIdFunc = async (lid) => { return await client.getContactById(lid); };
+      await handleMessageAck(messageId, ack, msg.to, getContactIdFunc);
     });
 
     client.initialize().catch(err => {
@@ -276,6 +154,11 @@ export const getSessionStatus = async (req, res) => {
   try {
     const customer = await Customer.findById(customerId);
     if (!customer) return res.status(404).json({ message: 'Customer not found' });
+
+    if (customer.whatsapp?.provider === 'baileys' && process.env.BAILEYS_ENABLED === 'true') {
+      const status = await baileysService.getBaileysStatus(customerId);
+      return res.json(status);
+    }
 
     const session = sessions.get(customerId);
 
@@ -297,6 +180,12 @@ export const disconnectSession = async (req, res) => {
   const { customerId } = req.params;
 
   try {
+    const customer = await Customer.findById(customerId);
+    if (customer?.whatsapp?.provider === 'baileys') {
+      const response = await baileysService.disconnectBaileysSession(customerId);
+      return res.json(response);
+    }
+
     const session = sessions.get(customerId);
 
     if (session && session.client) {
@@ -320,6 +209,11 @@ export const disconnectSession = async (req, res) => {
 };
 
 export const sendMessage = async (customerId, number, text, base64Media, mimeType, filename, campaignId, contactId) => {
+  const customer = await Customer.findById(customerId);
+  if (customer?.whatsapp?.provider === 'baileys') {
+    return await baileysService.sendBaileysMessage(customerId, number, text, base64Media, mimeType, filename, campaignId, contactId);
+  }
+
   const session = sessions.get(customerId.toString());
   if (!session || session.status !== 'CONNECTED' || !session.client) {
     throw new Error('WhatsApp client not connected');

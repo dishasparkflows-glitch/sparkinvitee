@@ -508,8 +508,17 @@ const NewCampaignWizard = () => {
                   </label>
                   
                   {campaignData.file && (
-                    <div className="mt-4 text-sm font-medium text-gray-700">
-                      Selected: {campaignData.file.name}
+                    <div className="mt-6 flex flex-col items-center">
+                      <div className="w-48 h-48 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex items-center justify-center relative group">
+                        {campaignData.file.type.includes('pdf') ? (
+                          <object data={URL.createObjectURL(campaignData.file)} type="application/pdf" className="w-full h-full pointer-events-none" />
+                        ) : (
+                          <img src={URL.createObjectURL(campaignData.file)} alt="Preview" className="w-full h-full object-contain" />
+                        )}
+                      </div>
+                      <span className="mt-3 text-sm font-semibold text-[#4c3963] bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-200">
+                        {campaignData.file.name}
+                      </span>
                     </div>
                   )}
                 </div>

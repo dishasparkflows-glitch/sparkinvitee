@@ -27,8 +27,20 @@ export const getCampaignsByCustomerId = async (req, res) => {
 
 export const getCampaignById = async (req, res) => {
   try {
-    const campaign = await Campaign.findById(req.params.id).populate('customerId');
+    const campaign = await Campaign.findById(req.params.id).populate('customerId').lean();
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+
+    if (campaign.fileUrl && !campaign.fileUrl.startsWith('http')) {
+      try {
+        campaign.fileUrl = await getPresignedDownloadUrl(campaign.fileUrl);
+      } catch (err) {
+        console.error('Failed to generate presigned URL:', err);
+        campaign.fileUrl = '';
+      }
+    } else if (campaign.fileUrl) {
+      campaign.fileUrl = campaign.fileUrl;
+    }
+
     res.json(campaign);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching campaign', error: error.message });
@@ -211,13 +223,10 @@ export const processCampaign = async (campaignId, campaignData) => {
              
              // If it's a Cloudflare R2 key (not an http URL), generate a download URL
              if (!fetchUrl.startsWith('http://') && !fetchUrl.startsWith('https://')) {
-                 console.log(`[R2] Generating presigned download URL for key: ${fetchUrl}`);
                  fetchUrl = await getPresignedDownloadUrl(fetchUrl);
-                 console.log(`[R2] Got presigned URL: ${fetchUrl.substring(0, 80)}...`);
              }
 
              if (fetchUrl.startsWith('http://') || fetchUrl.startsWith('https://')) {
-                 console.log(`[R2] Fetching file from URL...`);
                  const response = await fetch(fetchUrl);
                  if (!response.ok) {
                      const body = await response.text();
@@ -396,31 +405,6 @@ export const processCampaign = async (campaignId, campaignData) => {
   } catch (error) {
     console.error('Fatal campaign process error:', error);
     await Campaign.findByIdAndUpdate(campaignId, { status: 'Failed' });
-  }
-};
-
-export const uploadCsv = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
-    }
-    
-    // Parse CSV (Mock parsing for now)
-    // Real implementation would use something like `csv-parser`
-    const filePath = req.file.path;
-    
-    // Mock successful parse returning an array of contacts
-    const mockContacts = [
-      { name: 'Radhika', number: '9946245623', var1: 'Var1Data' },
-      { name: 'Alia', number: '9946245624', var1: 'Var1Data' },
-    ];
-    
-    // Clean up file after parsing
-    fs.unlinkSync(filePath);
-    
-    res.json({ contacts: mockContacts });
-  } catch (error) {
-    res.status(500).json({ message: 'Error parsing CSV', error: error.message });
   }
 };
 
