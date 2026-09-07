@@ -364,7 +364,14 @@ const NewCampaignWizard = () => {
                   {/* Table Section */}
                   <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
                     <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
-                      <h3 className="font-bold text-gray-700 text-sm">Details</h3>
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-bold text-gray-700 text-sm">Details</h3>
+                        {campaignData.contacts && campaignData.contacts.length > 0 && (
+                          <span className="bg-[#4c3963] text-white text-xs font-bold px-3 py-1 rounded-full">
+                            Total: {campaignData.contacts.length}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex gap-3">
                         <button 
                           className="bg-[#6b5883] text-white px-6 py-1.5 rounded-md text-sm font-medium hover:bg-opacity-90"

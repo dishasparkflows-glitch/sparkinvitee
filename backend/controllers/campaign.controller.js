@@ -1,7 +1,6 @@
 import Campaign from '../models/Campaign.js';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
-import fs from 'fs';
 import path from 'path';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { sendMessage } from './whatsapp.controller.js';
@@ -42,7 +41,7 @@ export const deleteCampaign = async (req, res) => {
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
 
     // Delete associated file from Cloudflare R2 if it exists
-    if (campaign.fileUrl && !campaign.fileUrl.startsWith('/uploads/')) {
+    if (campaign.fileUrl) {
       try {
         await deleteMedia(campaign.fileUrl);
         console.log(`[R2] Deleted file for campaign ${req.params.id}: ${campaign.fileUrl}`);
@@ -210,8 +209,8 @@ export const processCampaign = async (campaignId, campaignData) => {
              
              let fetchUrl = campaignData.fileUrl;
              
-             // If it's a Cloudflare R2 key (not an http URL, not a local /uploads path), generate a download URL
-             if (!fetchUrl.startsWith('http://') && !fetchUrl.startsWith('https://') && !fetchUrl.startsWith('/uploads/')) {
+             // If it's a Cloudflare R2 key (not an http URL), generate a download URL
+             if (!fetchUrl.startsWith('http://') && !fetchUrl.startsWith('https://')) {
                  console.log(`[R2] Generating presigned download URL for key: ${fetchUrl}`);
                  fetchUrl = await getPresignedDownloadUrl(fetchUrl);
                  console.log(`[R2] Got presigned URL: ${fetchUrl.substring(0, 80)}...`);
@@ -229,11 +228,7 @@ export const processCampaign = async (campaignId, campaignData) => {
                  filePathForName = new URL(fetchUrl).pathname;
                  console.log(`[R2] File fetched OK. Size: ${fileBytes.length} bytes, ext: ${ext}`);
              } else {
-                 const localPath = path.join(process.cwd(), fetchUrl);
-                 if (!fs.existsSync(localPath)) throw new Error('Local file not found');
-                 fileBytes = fs.readFileSync(localPath);
-                 ext = path.extname(localPath).toLowerCase();
-                 filePathForName = localPath;
+                 throw new Error(`Invalid file URL or key: ${fetchUrl}`);
              }
                 
                 // 1. Set the fallback to the raw file
