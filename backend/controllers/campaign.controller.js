@@ -1,6 +1,7 @@
 import Campaign from '../models/Campaign.js';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
+import Customer from '../models/Customer.js';
 import path from 'path';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { sendMessage } from './whatsapp.controller.js';
@@ -8,8 +9,8 @@ import { getPresignedDownloadUrl, uploadBufferToR2, deleteMedia } from '../servi
 
 export const getAllCampaigns = async (req, res) => {
   try {
-    // Populate customerId to get the Customer's name for the "CAMPAIGN & CUSTOMER NAME" column
-    const campaigns = await Campaign.find().populate('customerId', 'name').sort({ createdAt: -1 });
+    // Populate customerId to get the Customer's name + WhatsApp number for the list
+    const campaigns = await Campaign.find().populate('customerId', 'name whatsapp').sort({ createdAt: -1 });
     res.json(campaigns);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching campaigns', error: error.message });
@@ -41,6 +42,23 @@ export const getCampaignById = async (req, res) => {
       campaign.fileUrl = campaign.fileUrl;
     }
 
+    // Infer failureReason for contacts that failed or are invalid without a recorded reason
+    if (campaign.contacts && campaign.contacts.length > 0) {
+      const isCustomerWaConnected = campaign.customerId?.whatsapp?.status === 'Connected';
+      campaign.contacts.forEach(c => {
+        if (c.delivery && (c.delivery.failed || c.delivery.invalid) && !c.delivery.failureReason) {
+          const cleanNum = (c.number || '').toString().replace(/\D/g, '');
+          if (!cleanNum || cleanNum.length < 10) {
+            c.delivery.failureReason = 'Invalid phone number';
+          } else if (!isCustomerWaConnected) {
+            c.delivery.failureReason = 'WhatsApp disconnected';
+          } else {
+            c.delivery.failureReason = 'WhatsApp uninstalled';
+          }
+        }
+      });
+    }
+
     res.json(campaign);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching campaign', error: error.message });
@@ -69,15 +87,45 @@ export const deleteCampaign = async (req, res) => {
   }
 };
 
+export const pauseCampaign = async (req, res) => {
+  try {
+    const campaign = await Campaign.findById(req.params.id);
+    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (campaign.status !== 'In-Process') {
+      return res.status(400).json({ message: 'Only in-process campaigns can be paused' });
+    }
+    const updated = await Campaign.findByIdAndUpdate(req.params.id, { status: 'Paused' }, { returnDocument: 'after' });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: 'Error pausing campaign', error: error.message });
+  }
+};
+
+export const resumeCampaign = async (req, res) => {
+  try {
+    const campaign = await Campaign.findById(req.params.id);
+    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (campaign.status !== 'Paused') {
+      return res.status(400).json({ message: 'Only paused campaigns can be resumed' });
+    }
+    const updated = await Campaign.findByIdAndUpdate(req.params.id, { status: 'In-Process' }, { returnDocument: 'after' });
+    // Re-trigger background processor — it will skip already-sent contacts
+    processCampaign(updated._id, updated).catch(err => console.error('Campaign resume error:', err));
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: 'Error resuming campaign', error: error.message });
+  }
+};
+
 export const cancelCampaign = async (req, res) => {
   try {
     const oldCampaign = await Campaign.findById(req.params.id);
     if (!oldCampaign) return res.status(404).json({ message: 'Campaign not found' });
     
-    const wasInProcess = oldCampaign.status === 'In-Process';
+    const wasInProcess = oldCampaign.status === 'In-Process' || oldCampaign.status === 'Paused';
     const campaign = await Campaign.findByIdAndUpdate(req.params.id, { status: 'Cancelled' }, { returnDocument: 'after' });
     
-    // If it was NOT in-process, processCampaign is not running to refund it, so we must refund here
+    // If it was NOT in-process/paused, processCampaign is not running to refund it, so we must refund here
     if (!wasInProcess && oldCampaign.status !== 'Drafted') {
        const creditsToRefund = campaign.stats.creditsUsed - campaign.stats.sent;
        if (creditsToRefund > 0) {
@@ -99,7 +147,7 @@ export const cancelCampaign = async (req, res) => {
        }
     }
     
-    res.json(campaign);
+    res.json({ ...campaign.toObject(), note: 'Remaining messages have been cancelled. Already-sent messages were not recalled.' });
   } catch (error) {
     res.status(500).json({ message: 'Error cancelling campaign', error: error.message });
   }
@@ -122,6 +170,18 @@ export const createCampaign = async (req, res) => {
       failed: 0,
       invalid: 0
     };
+
+    // Populate senderNumber from Customer's WhatsApp number
+    if (campaignData.customerId) {
+      try {
+        const customer = await Customer.findById(campaignData.customerId);
+        if (customer && customer.whatsapp?.mobileNo) {
+          campaignData.senderNumber = customer.whatsapp.mobileNo;
+        }
+      } catch (e) {
+        console.error('Could not fetch customer for senderNumber:', e.message);
+      }
+    }
 
     const campaign = new Campaign(campaignData);
     await campaign.save();
@@ -192,11 +252,20 @@ export const processCampaign = async (campaignId, campaignData) => {
   try {
     for (const contact of campaignData.contacts) {
       if (contact.number) {
-        // Check for cancellation before processing next contact
+        // Skip contacts that were already sent (important for resume after pause)
+        if (contact.delivery?.sent) {
+          continue;
+        }
+
+        // Check for cancellation or pause before processing next contact
         const currentStatus = await Campaign.findById(campaignId).select('status');
         if (currentStatus && currentStatus.status === 'Cancelled') {
           console.log(`Campaign ${campaignId} was cancelled. Aborting loop.`);
           break;
+        }
+        if (currentStatus && currentStatus.status === 'Paused') {
+          console.log(`Campaign ${campaignId} was paused. Stopping loop.`);
+          return; // Exit without setting final status — campaign stays Paused
         }
 
         // Parse message template
@@ -256,10 +325,11 @@ export const processCampaign = async (campaignId, campaignData) => {
                        let page;
                        
                        if (ext === '.pdf') {
-                         const existingPdf = await PDFDocument.load(fileBytes);
-                         const copiedPages = await pdfDoc.copyPages(existingPdf, [0]);
-                         page = copiedPages[0];
-                         pdfDoc.addPage(page);
+                          const existingPdf = await PDFDocument.load(fileBytes);
+                          const pageIndices = existingPdf.getPageIndices();
+                          const copiedPages = await pdfDoc.copyPages(existingPdf, pageIndices);
+                          copiedPages.forEach(p => pdfDoc.addPage(p));
+                          page = copiedPages[0];
                         } else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp') {
                           let image;
                           // Detect actual image type from magic bytes (don't trust extension)
@@ -336,7 +406,15 @@ export const processCampaign = async (campaignId, campaignData) => {
           
           console.log(`Sent to ${contact.number} with messageId ${sentMessageId}`);
 
-          const updateSet = { 'contacts.$.delivery.sent': new Date() };
+          const updateSet = { 
+            'contacts.$.delivery.sent': new Date(),
+            'contacts.$.delivery.failed': false,
+            'contacts.$.delivery.invalid': false,
+            'contacts.$.delivery.failureReason': null,
+            'contacts.$.delivery.retryStatus': 'Sent',
+            'contacts.$.delivery.textSent': !!msg,
+            'contacts.$.delivery.mediaSent': !!base64Media
+          };
           if (sentMessageId) {
              updateSet['contacts.$.messageId'] = sentMessageId;
           }
@@ -352,11 +430,35 @@ export const processCampaign = async (campaignId, campaignData) => {
           // Credits were deducted upfront, no need to deduct here
         } catch (err) {
           console.error(`Failed to send to ${contact.number}:`, err.message);
+
+          let reason = 'Delivery failed';
+          let retryStatus = 'Failed';
+          let isInvalid = false;
+
+          if (err.message?.includes('uninstalled') || err.message?.includes('not registered')) {
+            reason = 'WhatsApp uninstalled';
+          } else if (err.message?.includes('not connected') || err.message?.includes('disconnected')) {
+            reason = 'WhatsApp disconnected';
+          } else if (err.message?.includes('Invalid phone number')) {
+            reason = 'Invalid phone number';
+            isInvalid = true;
+          } else if (err.message?.includes('Timeout')) {
+            reason = 'Timeout - Status unknown';
+            retryStatus = 'Status unknown';
+          } else {
+            reason = err.message || 'Delivery failed';
+          }
+
           await Campaign.findOneAndUpdate(
             { _id: campaignId, 'contacts._id': contact._id },
             {
-              $inc: { 'stats.failed': 1, 'stats.inQueue': -1 },
-              $set: { 'contacts.$.delivery.failed': true }
+              $inc: { 'stats.failed': 1, 'stats.inQueue': -1, ...(isInvalid ? { 'stats.invalid': 1 } : {}) },
+              $set: { 
+                'contacts.$.delivery.failed': true,
+                'contacts.$.delivery.invalid': isInvalid,
+                'contacts.$.delivery.failureReason': reason,
+                'contacts.$.delivery.retryStatus': retryStatus
+              }
             }
           );
         }
@@ -427,5 +529,312 @@ export const uploadFile = async (req, res) => {
   } catch (error) {
     console.error('Error uploading file to R2:', error);
     res.status(500).json({ message: 'Error uploading file', error: error.message });
+  }
+};
+
+export const retryFailedRecipients = async (req, res) => {
+  const { id } = req.params;
+  const { contactIds } = req.body || {};
+
+  try {
+    const campaign = await Campaign.findById(id).populate('customerId');
+    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+
+    // Rule: If WhatsApp is disconnected, ask the user to reconnect before retrying.
+    const customer = campaign.customerId;
+    if (!customer || customer.whatsapp?.status !== 'Connected') {
+      return res.status(400).json({
+        message: 'WhatsApp is disconnected. Please reconnect before retrying.',
+        code: 'WHATSAPP_DISCONNECTED'
+      });
+    }
+
+    // Determine target contact IDs (from body array or from params for single-retry)
+    let targetIds = null;
+    if (contactIds && Array.isArray(contactIds) && contactIds.length > 0) {
+      targetIds = contactIds.map(String);
+    } else if (req.params.contactId) {
+      targetIds = [String(req.params.contactId)];
+    }
+
+    // Rule: Retry only failed recipients - if message already sent, delivered, or read, skip.
+    const eligibleContacts = campaign.contacts.filter(c => {
+      if (targetIds && !targetIds.includes(c._id.toString())) return false;
+      // Skip if already sent, delivered, or seen
+      if (c.delivery?.sent || c.delivery?.delivered || c.delivery?.seen) return false;
+      // Must be failed or invalid or unknown
+      return c.delivery?.failed || c.delivery?.invalid || c.delivery?.retryStatus === 'Status unknown' || c.delivery?.retryStatus === 'Failed' || !c.delivery?.sent;
+    });
+
+    if (eligibleContacts.length === 0) {
+      return res.status(400).json({ message: 'No eligible failed recipients found to retry' });
+    }
+
+    // Rule: If the number is invalid, require correction first.
+    if (targetIds && targetIds.length === 1) {
+      const singleContact = eligibleContacts[0];
+      const cleanNum = singleContact.number ? singleContact.number.toString().replace(/\D/g, '') : '';
+      if (!cleanNum || cleanNum.length < 10) {
+        return res.status(400).json({
+          message: 'Phone number is invalid. Please correct the phone number before retrying.',
+          code: 'INVALID_NUMBER',
+          contactId: singleContact._id
+        });
+      }
+    }
+
+    const eligibleContactIds = eligibleContacts.map(c => c._id);
+
+    // Rule: Mark as 'Queued'
+    await Campaign.updateMany(
+      { _id: id, 'contacts._id': { $in: eligibleContactIds } },
+      {
+        $set: {
+          'contacts.$[elem].delivery.retryStatus': 'Queued'
+        }
+      },
+      {
+        arrayFilters: [{ 'elem._id': { $in: eligibleContactIds } }]
+      }
+    );
+
+    // Launch retry process asynchronously
+    executeRetryProcess(id, eligibleContacts, campaign).catch(err => {
+      console.error('Error during executeRetryProcess:', err);
+    });
+
+    res.json({
+      message: `Queued ${eligibleContacts.length} failed recipient(s) for retry`,
+      queuedCount: eligibleContacts.length
+    });
+  } catch (error) {
+    console.error('Error in retryFailedRecipients:', error);
+    res.status(500).json({ message: 'Error retrying failed recipients', error: error.message });
+  }
+};
+
+const executeRetryProcess = async (campaignId, contacts, campaignData) => {
+  try {
+    let base64Media = null;
+    let mimeType = null;
+    let filename = 'document.pdf';
+
+    if (campaignData.fileUrl) {
+      try {
+        let fetchUrl = campaignData.fileUrl;
+        if (!fetchUrl.startsWith('http://') && !fetchUrl.startsWith('https://')) {
+          fetchUrl = await getPresignedDownloadUrl(fetchUrl);
+        }
+        if (fetchUrl.startsWith('http://') || fetchUrl.startsWith('https://')) {
+          const response = await fetch(fetchUrl);
+          if (response.ok) {
+            const fileBytes = Buffer.from(await response.arrayBuffer());
+            const ext = path.extname(new URL(fetchUrl).pathname).toLowerCase();
+            base64Media = fileBytes.toString('base64');
+            if (ext === '.pdf') mimeType = 'application/pdf';
+            else if (ext === '.png') mimeType = 'image/png';
+            else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+            else if (ext === '.mp4') mimeType = 'video/mp4';
+            else mimeType = 'application/octet-stream';
+            filename = campaignData.customPdfName ? `${campaignData.customPdfName}${ext}` : path.basename(new URL(fetchUrl).pathname);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching file for retry:', err);
+      }
+    }
+
+    for (const contact of contacts) {
+      // Abort if campaign is paused or cancelled
+      const freshCheck = await Campaign.findById(campaignId).select('status');
+      if (!freshCheck || freshCheck.status === 'Cancelled' || freshCheck.status === 'Paused') {
+        break;
+      }
+
+      // Check number validity: require correction first
+      const cleanNum = contact.number ? contact.number.toString().replace(/\D/g, '') : '';
+      if (!cleanNum || cleanNum.length < 10) {
+        await Campaign.findOneAndUpdate(
+          { _id: campaignId, 'contacts._id': contact._id },
+          {
+            $set: {
+              'contacts.$.delivery.failed': true,
+              'contacts.$.delivery.invalid': true,
+              'contacts.$.delivery.failureReason': 'Invalid phone number',
+              'contacts.$.delivery.retryStatus': 'Failed',
+              'contacts.$.delivery.lastRetriedAt': new Date()
+            }
+          }
+        );
+        continue;
+      }
+
+      // Rule: During retry: Queued -> Sending -> Sent
+      await Campaign.findOneAndUpdate(
+        { _id: campaignId, 'contacts._id': contact._id },
+        {
+          $set: {
+            'contacts.$.delivery.retryStatus': 'Sending'
+          }
+        }
+      );
+
+      let msg = campaignData.messageTemplate || '';
+      msg = msg.replace(/\[\[Name\]\]/g, contact.name || '');
+      msg = msg.replace(/\[\[Number\]\]/g, contact.number || '');
+      msg = msg.replace(/\[\[Var 1\]\]/g, contact.var1 || '');
+      msg = msg.replace(/\[\[Var 2\]\]/g, contact.var2 || '');
+      msg = msg.replace(/\[\[Var 3\]\]/g, contact.var3 || '');
+      msg = msg.replace(/\[\[Var 4\]\]/g, contact.var4 || '');
+      msg = msg.replace(/\[\[Var 5\]\]/g, contact.var5 || '');
+
+      // Rule: For an invitation containing separate text and attachment messages, retry only the failed part.
+      let onlyPart = 'all';
+      if (contact.delivery?.textSent && !contact.delivery?.mediaSent && base64Media) {
+        onlyPart = 'media';
+      } else if (contact.delivery?.mediaSent && !contact.delivery?.textSent && msg) {
+        onlyPart = 'text';
+      }
+
+      try {
+        const customerId = campaignData.customerId._id || campaignData.customerId;
+        const sentMessageId = await sendMessage(
+          customerId,
+          contact.number,
+          msg,
+          base64Media,
+          mimeType,
+          filename,
+          campaignId,
+          contact._id,
+          { onlyPart }
+        );
+
+        console.log(`[Retry] Sent successfully to ${contact.number}, id: ${sentMessageId}`);
+
+        const updateSet = {
+          'contacts.$.delivery.sent': new Date(),
+          'contacts.$.delivery.failed': false,
+          'contacts.$.delivery.invalid': false,
+          'contacts.$.delivery.failureReason': null,
+          'contacts.$.delivery.retryStatus': 'Sent',
+          'contacts.$.delivery.textSent': true,
+          'contacts.$.delivery.mediaSent': !!base64Media,
+          'contacts.$.delivery.lastRetriedAt': new Date()
+        };
+        if (sentMessageId) {
+          updateSet['contacts.$.messageId'] = sentMessageId;
+        }
+
+        await Campaign.findOneAndUpdate(
+          { _id: campaignId, 'contacts._id': contact._id },
+          {
+            $inc: { 'stats.sent': 1, 'stats.failed': -1 },
+            $set: updateSet
+          }
+        );
+      } catch (err) {
+        console.error(`[Retry] Failed sending to ${contact.number}:`, err.message);
+
+        let reason = 'Delivery failed';
+        let retryStatus = 'Failed';
+        let isInvalid = false;
+
+        if (err.message?.includes('uninstalled') || err.message?.includes('not registered')) {
+          reason = 'WhatsApp uninstalled';
+        } else if (err.message?.includes('not connected') || err.message?.includes('disconnected')) {
+          reason = 'WhatsApp disconnected';
+        } else if (err.message?.includes('Invalid phone number')) {
+          reason = 'Invalid phone number';
+          isInvalid = true;
+        } else if (err.message?.includes('Timeout')) {
+          // Rule: If a timeout means you don't know whether the message was sent, show 'Status unknown' and check before resending to avoid duplicates.
+          reason = 'Timeout - Status unknown';
+          retryStatus = 'Status unknown';
+        } else {
+          reason = err.message || 'Delivery failed';
+        }
+
+        await Campaign.findOneAndUpdate(
+          { _id: campaignId, 'contacts._id': contact._id },
+          {
+            $set: {
+              'contacts.$.delivery.failed': true,
+              'contacts.$.delivery.invalid': isInvalid,
+              'contacts.$.delivery.failureReason': reason,
+              'contacts.$.delivery.retryStatus': retryStatus,
+              'contacts.$.delivery.lastRetriedAt': new Date()
+            }
+          }
+        );
+      }
+
+      // Respect delay between sends
+      const delay = (campaignData.delayFrom || 2) * 1000;
+      await new Promise(r => setTimeout(r, delay));
+    }
+
+    // Recalculate campaign status after retry pass
+    const finalCheck = await Campaign.findById(campaignId);
+    if (finalCheck && finalCheck.status !== 'Cancelled') {
+      const remainingFailed = finalCheck.contacts.filter(c => c.delivery?.failed).length;
+      const totalSent = finalCheck.contacts.filter(c => c.delivery?.sent).length;
+      let newStatus = finalCheck.status;
+
+      if (remainingFailed === 0 && totalSent > 0) {
+        newStatus = 'Completed';
+      } else if (remainingFailed > 0 && totalSent > 0) {
+        newStatus = 'Partially Failed';
+      } else if (remainingFailed > 0 && totalSent === 0) {
+        newStatus = 'Failed';
+      }
+
+      await Campaign.findByIdAndUpdate(campaignId, {
+        status: newStatus,
+        'stats.failed': remainingFailed,
+        'stats.sent': totalSent
+      });
+    }
+  } catch (fatalErr) {
+    console.error('Fatal executeRetryProcess error:', fatalErr);
+  }
+};
+
+export const updateRecipientNumber = async (req, res) => {
+  const { id, contactId } = req.params;
+  const { number } = req.body;
+
+  if (!number) {
+    return res.status(400).json({ message: 'Phone number is required' });
+  }
+
+  const cleanNum = number.toString().replace(/\D/g, '');
+  if (cleanNum.length < 10) {
+    return res.status(400).json({ message: 'Phone number must have at least 10 digits' });
+  }
+
+  try {
+    const campaign = await Campaign.findOneAndUpdate(
+      { _id: id, 'contacts._id': contactId },
+      {
+        $set: {
+          'contacts.$.number': cleanNum,
+          'contacts.$.delivery.invalid': false,
+          'contacts.$.delivery.failureReason': null,
+          'contacts.$.delivery.retryStatus': null
+        }
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaign or contact not found' });
+    }
+
+    const updatedContact = campaign.contacts.find(c => c._id.toString() === contactId);
+    res.json({ message: 'Phone number updated successfully', contact: updatedContact });
+  } catch (error) {
+    console.error('Error updating recipient number:', error);
+    res.status(500).json({ message: 'Error updating recipient number', error: error.message });
   }
 };

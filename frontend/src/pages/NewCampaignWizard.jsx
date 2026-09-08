@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { Check, ArrowLeft, X, FileText, Info, FolderOpen } from 'lucide-react';
+import { Check, ArrowLeft, X, FileText, Info, FolderOpen, Loader2, Users, MessageSquare, Paperclip, Clock, Eye, ExternalLink } from 'lucide-react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import Dropdown from '../components/Dropdown';
+import PdfPreviewCanvas from '../components/PdfPreviewCanvas';
+import PdfDocThumbnail from '../components/PdfDocThumbnail';
 
 const steps = [
   { id: 1, title: 'Campaigns Type', subtitle: 'Choose a Method to Send the Campaign' },
   { id: 2, title: 'Import Numbers', subtitle: 'Enter WhatsApp Numbers' },
   { id: 3, title: 'Import File', subtitle: 'Add PDF Or Image' },
   { id: 4, title: 'Send Invitation', subtitle: 'Send Invitation' },
-  { id: 5, title: 'Add Message', subtitle: 'Add Message' }
+  { id: 5, title: 'Add Message', subtitle: 'Add Message' },
+  { id: 6, title: 'Review & Confirm', subtitle: 'Review before sending' }
 ];
 
 const NewCampaignWizard = () => {
@@ -23,6 +26,9 @@ const NewCampaignWizard = () => {
   const [importMethod, setImportMethod] = useState('csv');
   const [isScheduled, setIsScheduled] = useState(false);
   const [manualImportModalOpen, setManualImportModalOpen] = useState(false);
+  const [attachmentModalOpen, setAttachmentModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
   const [campaignData, setCampaignData] = useState({
     customerId: preselectedCustomer || '',
     name: '',
@@ -41,6 +47,33 @@ const NewCampaignWizard = () => {
 
   const { id } = useParams();
   const isEditing = !!id;
+
+  const getAttachmentInfo = () => {
+    if (campaignData.file) {
+      const isPdf = campaignData.file.type?.includes('pdf') || campaignData.file.name?.toLowerCase().endsWith('.pdf');
+      const url = URL.createObjectURL(campaignData.file);
+      return {
+        name: campaignData.file.name,
+        size: `${(campaignData.file.size / 1024).toFixed(1)} KB`,
+        url,
+        isPdf
+      };
+    }
+    if (campaignData.existingFileUrl) {
+      const isPdf = campaignData.existingFileUrl.toLowerCase().includes('.pdf');
+      const fullUrl = campaignData.existingFileUrl.startsWith('http')
+        ? campaignData.existingFileUrl
+        : `${import.meta.env.VITE_CF_URL || 'https://assets.npjnxt.com'}/${campaignData.existingFileUrl}`;
+      const name = campaignData.existingFileUrl.split('/').pop() || 'Attached Document';
+      return {
+        name,
+        size: 'Attached File',
+        url: fullUrl,
+        isPdf
+      };
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (isEditing) {
@@ -130,27 +163,76 @@ const NewCampaignWizard = () => {
     axios.get(`${import.meta.env.VITE_API_URL}/api/customers`)
       .then(res => {
         setCustomers(res.data);
-        if (!preselectedCustomer && res.data.length > 0) {
+        if (!isEditing && !preselectedCustomer && res.data.length > 0) {
           setCampaignData(prev => ({ ...prev, customerId: res.data[0]._id }));
         }
       })
       .catch(err => console.error('Error fetching customers:', err));
-  }, [preselectedCustomer]);
+  }, [preselectedCustomer, isEditing]);
+
+  // Per-step validation
+  const validateStep = (step) => {
+    const errors = {};
+
+    if (step === 1) {
+      if (!campaignData.customerId) errors.customerId = 'Please select a customer.';
+      if (!campaignData.name || campaignData.name.trim() === '') errors.name = 'Campaign name is required.';
+    }
+
+    if (step === 2) {
+      const validContacts = campaignData.contacts.filter(c => c.number && c.number.trim() !== '');
+      if (validContacts.length === 0) errors.contacts = 'At least one contact with a valid number is required.';
+    }
+
+    if (step === 5) {
+      if (!campaignData.messageTemplate || campaignData.messageTemplate.trim() === '') {
+        errors.messageTemplate = 'Message template is required.';
+      }
+    }
+
+    return errors;
+  };
 
   const nextStep = () => {
-    if (currentStep === 1 && (!campaignData.name || campaignData.name.trim() === '')) {
-      alert('Please enter a Campaign Name.');
+    const errors = validateStep(currentStep);
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
       return;
     }
-    setCurrentStep(prev => Math.min(prev + 1, 5));
+    setValidationErrors({});
+    setCurrentStep(prev => Math.min(prev + 1, 6));
   };
-  const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 1));
+
+  const prevStep = () => {
+    setValidationErrors({});
+    setCurrentStep(prev => Math.max(prev - 1, 1));
+  };
   
   const handleSaveDraft = async () => {
+    // Drafts only require a customer and name
+    if (!campaignData.customerId) {
+      setValidationErrors({ customerId: 'Please select a customer.' });
+      return;
+    }
+    if (!campaignData.name || campaignData.name.trim() === '') {
+      setValidationErrors({ name: 'Campaign name is required.' });
+      return;
+    }
+    setValidationErrors({});
     await submitCampaign('Drafted');
   };
 
   const handleSend = async () => {
+    // Final validation before send
+    const allErrors = {};
+    for (let step = 1; step <= 5; step++) {
+      Object.assign(allErrors, validateStep(step));
+    }
+    if (Object.keys(allErrors).length > 0) {
+      setValidationErrors(allErrors);
+      return;
+    }
+    setValidationErrors({});
     if (isScheduled) {
       await submitCampaign('Scheduled');
     } else {
@@ -159,10 +241,8 @@ const NewCampaignWizard = () => {
   };
 
   const submitCampaign = async (status) => {
-    if (!campaignData.customerId) {
-      alert("Please select a customer first.");
-      return;
-    }
+    if (isSubmitting) return; // Prevent double submission
+    setIsSubmitting(true);
 
     try {
       let fileUrl = campaignData.existingFileUrl || null;
@@ -200,6 +280,7 @@ const NewCampaignWizard = () => {
     } catch (err) {
       console.error('Error saving campaign:', err);
       alert('Failed to save campaign');
+      setIsSubmitting(false);
     }
   };
 
@@ -215,6 +296,12 @@ const NewCampaignWizard = () => {
     document.body.removeChild(link);
   };
 
+  // Helper for the Review step
+  const getCustomerName = () => {
+    const cust = customers.find(c => c._id === campaignData.customerId);
+    return cust?.name || 'Unknown';
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-6">
@@ -222,7 +309,7 @@ const NewCampaignWizard = () => {
           <button onClick={() => navigate('/campaigns')} className="text-gray-500 hover:text-gray-700">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-2xl font-bold">New Campaign</h1>
+          <h1 className="text-2xl font-bold">{isEditing ? 'Edit Campaign' : 'New Campaign'}</h1>
         </div>
       </div>
 
@@ -231,27 +318,51 @@ const NewCampaignWizard = () => {
         <div className="w-1/3 bg-gray-50 p-6 border-r border-gray-200">
           <div className="space-y-6">
             {steps.map((step) => {
-              const isCompleted = currentStep > step.id;
+              const isStepDone = (stepId) => {
+                if (stepId === 1) return Boolean(campaignData.customerId && campaignData.name);
+                if (stepId === 2) return Boolean(campaignData.contacts && campaignData.contacts.length > 0);
+                if (stepId === 3) return Boolean(campaignData.file || campaignData.existingFileUrl);
+                if (stepId === 4) return Boolean(campaignData.file || campaignData.existingFileUrl);
+                if (stepId === 5) return Boolean(campaignData.messageTemplate);
+                return false;
+              };
+
+              const isCompleted = step.id !== currentStep && (currentStep > step.id || isStepDone(step.id));
               const isActive = currentStep === step.id;
               
               return (
-                <div key={step.id} className="flex gap-4">
+                <div 
+                  key={step.id} 
+                  onClick={() => {
+                    setValidationErrors({});
+                    setCurrentStep(step.id);
+                  }}
+                  className="flex gap-4 cursor-pointer p-2 -m-2 rounded-lg transition-all hover:bg-white/80 hover:shadow-2xs select-none group"
+                >
                   <div className="flex flex-col items-center">
-                    <div className={`w-8 h-8 rounded-md flex items-center justify-center font-bold text-sm ${
-                      isCompleted 
-                        ? 'bg-[var(--color-primary)] text-white' 
-                        : isActive 
-                          ? 'bg-gray-200 text-gray-900 border-2 border-[var(--color-primary)]'
-                          : 'bg-white border border-gray-300 text-gray-400'
+                    <div className={`w-8 h-8 rounded-md flex items-center justify-center font-bold text-sm transition-all ${
+                      isActive 
+                        ? 'bg-[var(--color-primary)] text-white shadow-sm ring-2 ring-purple-200'
+                        : isCompleted 
+                          ? 'bg-[var(--color-primary)] text-white' 
+                          : 'bg-white border border-gray-300 text-gray-500 group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]'
                     }`}>
-                      {isCompleted ? <Check size={16} /> : step.id}
+                      {isCompleted && !isActive ? <Check size={16} /> : step.id}
                     </div>
                     {step.id !== steps.length && (
                       <div className={`w-0.5 h-12 mt-2 ${isCompleted ? 'bg-[var(--color-primary)]' : 'bg-gray-200'}`}></div>
                     )}
                   </div>
                   <div>
-                    <h3 className={`font-semibold ${isActive ? 'text-gray-900' : isCompleted ? 'text-gray-900' : 'text-gray-400'}`}>{step.title}</h3>
+                    <h3 className={`font-semibold transition-colors ${
+                      isActive 
+                        ? 'text-[#4c3963] font-bold' 
+                        : isCompleted 
+                          ? 'text-gray-900 group-hover:text-[#4c3963]' 
+                          : 'text-gray-500 group-hover:text-gray-900'
+                    }`}>
+                      {step.title}
+                    </h3>
                     <p className="text-xs text-gray-500 mt-1">{step.subtitle}</p>
                   </div>
                 </div>
@@ -266,13 +377,18 @@ const NewCampaignWizard = () => {
             {currentStep === 1 && (
               <div className="space-y-6 max-w-xl mx-auto mt-8">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Select Customer <span className="text-red-500">*</span>
+                  </label>
                   <Dropdown 
                     value={campaignData.customerId}
-                    onChange={(val) => setCampaignData({...campaignData, customerId: val})}
+                    onChange={(val) => { setCampaignData({...campaignData, customerId: val}); setValidationErrors(prev => ({...prev, customerId: undefined})); }}
                     options={customers.map(c => ({ value: c._id, label: c.name }))}
                     placeholder="Select a customer..."
                   />
+                  {validationErrors.customerId && (
+                    <p className="text-red-500 text-xs mt-1 font-medium">{validationErrors.customerId}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -283,9 +399,12 @@ const NewCampaignWizard = () => {
                     placeholder="Enter Campaign Name" 
                     value={campaignData.name}
                     required
-                    onChange={(e) => setCampaignData({...campaignData, name: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[var(--color-primary)]" 
+                    onChange={(e) => { setCampaignData({...campaignData, name: e.target.value}); setValidationErrors(prev => ({...prev, name: undefined})); }}
+                    className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:border-[var(--color-primary)] ${validationErrors.name ? 'border-red-400' : 'border-gray-300'}`}
                   />
+                  {validationErrors.name && (
+                    <p className="text-red-500 text-xs mt-1 font-medium">{validationErrors.name}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Campaign Type</label>
@@ -357,6 +476,13 @@ const NewCampaignWizard = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Validation error */}
+                  {validationErrors.contacts && (
+                    <div className="bg-red-50 border border-red-200 text-red-600 text-sm font-medium px-4 py-2.5 rounded-lg">
+                      {validationErrors.contacts}
+                    </div>
+                  )}
 
                   {/* Table Section */}
                   <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
@@ -506,15 +632,22 @@ const NewCampaignWizard = () => {
                   
                   {campaignData.file && (
                     <div className="mt-6 flex flex-col items-center">
-                      <div className="w-48 h-48 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex items-center justify-center relative group">
-                        {campaignData.file.type.includes('pdf') ? (
-                          <object data={URL.createObjectURL(campaignData.file)} type="application/pdf" className="w-full h-full pointer-events-none" />
-                        ) : (
-                          <img src={URL.createObjectURL(campaignData.file)} alt="Preview" className="w-full h-full object-contain" />
-                        )}
+                      <div className="w-48 h-48 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex items-center justify-center relative group p-2">
+                        <PdfDocThumbnail file={campaignData.file} />
                       </div>
                       <span className="mt-3 text-sm font-semibold text-[#4c3963] bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-200">
                         {campaignData.file.name}
+                      </span>
+                    </div>
+                  )}
+
+                  {campaignData.existingFileUrl && !campaignData.file && (
+                    <div className="mt-6 flex flex-col items-center">
+                      <div className="w-48 h-48 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex items-center justify-center relative group p-2">
+                        <PdfDocThumbnail url={campaignData.existingFileUrl} />
+                      </div>
+                      <span className="mt-3 text-xs font-semibold text-[#4c3963] bg-purple-50 px-4 py-1.5 rounded-full border border-purple-200">
+                        File saved in draft (Click 'Browse File' to replace)
                       </span>
                     </div>
                   )}
@@ -526,7 +659,7 @@ const NewCampaignWizard = () => {
               <div className="flex min-h-[600px] gap-6 mt-4 max-w-[1200px] mx-auto">
                 
                 {/* Left: Customize PDF Sidebar */}
-                <div className="w-80 bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col h-fit">
+                <div className="w-80 bg-white border border-gray-100 shadow-sm rounded-xl p-5 flex flex-col h-fit shrink-0">
                   <h3 className="font-bold text-[#4c3963] mb-6 text-lg">Customize PDF</h3>
                   
                   <div className="flex flex-col gap-4">
@@ -649,113 +782,16 @@ const NewCampaignWizard = () => {
                 </div>
 
                 {/* Right: Canvas Area */}
-                <div className="flex-1 bg-white border border-gray-100 rounded-xl p-5 shadow-sm flex flex-col relative h-[650px]">
-                  
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-gray-800 text-lg">File Preview</h3>
-                  </div>
-                  
-                  <div className="flex-1 flex gap-5 overflow-hidden">
-                    {/* Main Preview */}
-                    <div className="flex-1 bg-[#f8f9fa] border border-gray-200 rounded-lg relative overflow-hidden flex items-center justify-center shadow-inner">
-                      {campaignData.file || campaignData.existingFileUrl ? (
-                        <div 
-                          className="relative inline-flex items-center justify-center max-w-full max-h-full shadow-sm"
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const id = e.dataTransfer.getData('drag-id');
-                            if (!id) return;
-                            
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            let x = ((e.clientX - rect.left) / rect.width) * 100;
-                            let y = ((e.clientY - rect.top) / rect.height) * 100;
-                            
-                            // clamp to 0-100
-                            x = Math.max(0, Math.min(100, x));
-                            y = Math.max(0, Math.min(100, y));
-                            
-                            const updated = campaignData.pdfCustomization.map(item => 
-                              item.id === id ? { ...item, x, y } : item
-                            );
-                            setCampaignData({...campaignData, pdfCustomization: updated});
-                          }}
-                        >
-                          {(() => {
-                             const isPdf = campaignData.file ? campaignData.file.type.includes('pdf') : campaignData.existingFileUrl?.toLowerCase().endsWith('.pdf');
-                             const previewUrl = campaignData.file 
-                               ? URL.createObjectURL(campaignData.file)
-                               : campaignData.existingFileUrl?.startsWith('http')
-                                 ? campaignData.existingFileUrl
-                                 : `${import.meta.env.VITE_CF_URL || 'https://assets.npjnxt.com'}/${campaignData.existingFileUrl}`;
-                             
-                             return isPdf ? (
-                               <object data={previewUrl} type="application/pdf" className="max-w-full max-h-full pointer-events-none" />
-                             ) : (
-                               <img src={previewUrl} alt="Preview" className="max-w-full max-h-full pointer-events-none" />
-                             );
-                          })()}
-
-                          <div className="absolute inset-0 z-0 pointer-events-none"></div>
-
-                          {/* Render Variables (now draggable directly on canvas) */}
-                          {campaignData.pdfCustomization.map(item => {
-                            let displayValue = item.variable;
-                            if (campaignData.contacts && campaignData.contacts.length > 0) {
-                              const contact = campaignData.contacts[0];
-                              const vMap = {
-                                'Name': contact.name,
-                                'Number': contact.number,
-                                'Var 1': contact.var1,
-                                'Var 2': contact.var2,
-                                'Var 3': contact.var3,
-                                'Var 4': contact.var4,
-                                'Var 5': contact.var5
-                              };
-                              if (vMap[item.variable]) displayValue = vMap[item.variable];
-                            }
-
-                            return (
-                              <div 
-                                key={item.id} 
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData('drag-id', item.id);
-                                }}
-                                style={{ 
-                                  position: 'absolute', 
-                                  left: `${item.x}%`, 
-                                  top: `${item.y}%`, 
-                                  transform: 'translate(-50%, -50%)',
-                                  fontSize: `${item.fontSize}px`,
-                                  color: item.color,
-                                  fontFamily: item.font
-                                }}
-                                className="absolute cursor-grab active:cursor-grabbing font-bold whitespace-nowrap z-10 select-none hover:outline hover:outline-2 hover:outline-dashed hover:outline-[var(--color-primary)] transition-all p-1"
-                              >
-                                {displayValue}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 font-medium">No Document Uploaded</span>
-                      )}
-                    </div>
-                    
-                    {/* Thumbnails Sidebar */}
-                    <div className="w-24 flex flex-col gap-3 overflow-y-auto pr-1 custom-scrollbar pb-4">
-                      {[1, 2, 3, 4].map(idx => (
-                        <div key={idx} className={`w-full h-32 bg-white rounded-md border-2 ${idx === 1 ? 'border-[var(--color-primary)] ring-2 ring-purple-100' : 'border-gray-200 hover:border-gray-300'} cursor-pointer overflow-hidden transition-all flex items-center justify-center shadow-sm`}>
-                          {campaignData.file && !campaignData.file.type.includes('pdf') ? (
-                            <img src={URL.createObjectURL(campaignData.file)} alt={`Thumb ${idx}`} className="w-full h-full object-cover" />
-                          ) : (
-                             <span className="text-gray-400 text-xs font-medium">Page {idx}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                <div className="flex-1 min-w-0 bg-white border border-gray-100 rounded-xl p-5 shadow-sm flex flex-col relative h-[650px] overflow-hidden">
+                  <PdfPreviewCanvas
+                    file={campaignData.file}
+                    existingFileUrl={campaignData.existingFileUrl}
+                    customizations={campaignData.pdfCustomization}
+                    onUpdateCustomization={(updated) => {
+                      setCampaignData(prev => ({ ...prev, pdfCustomization: updated }));
+                    }}
+                    contacts={campaignData.contacts}
+                  />
                 </div>
               </div>
             )}
@@ -766,7 +802,7 @@ const NewCampaignWizard = () => {
                 {/* Block 1: Add Message */}
                 <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
                   <div className="flex justify-between items-center mb-2">
-                    <h3 className="font-bold text-[#4c3963] text-lg">Add Message</h3>
+                    <h3 className="font-bold text-[#4c3963] text-lg">Add Message <span className="text-red-500">*</span></h3>
                     <button 
                       onClick={() => setCampaignData({...campaignData, messageTemplate: ''})}
                       className="text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors rounded-md px-4 py-1.5 text-sm font-semibold"
@@ -777,17 +813,21 @@ const NewCampaignWizard = () => {
                   <p className="text-sm text-gray-500 mb-6">Type your message to share with your Family ones.</p>
                   
                   
-                  <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col focus-within:border-[var(--color-primary)] transition-colors shadow-sm">
+                  <div className={`border rounded-lg overflow-hidden flex flex-col focus-within:border-[var(--color-primary)] transition-colors shadow-sm ${validationErrors.messageTemplate ? 'border-red-400' : 'border-gray-200'}`}>
                     <textarea 
                       className="w-full h-32 p-4 text-sm text-gray-700 focus:outline-none focus:bg-gray-50 transition-colors resize-none" 
-                      placeholder="Please enter your massage"
+                      placeholder="Please enter your message"
                       value={campaignData.messageTemplate}
-                      onChange={(e) => setCampaignData({...campaignData, messageTemplate: e.target.value})}
+                      onChange={(e) => { setCampaignData({...campaignData, messageTemplate: e.target.value}); setValidationErrors(prev => ({...prev, messageTemplate: undefined})); }}
                     ></textarea>
                     <div className="bg-white border-t border-gray-100 p-3 flex justify-between items-center">
                       <div className="flex gap-2">
                         {['[[Name]]', '[[Var1]]', '[[Var2]]', '[[Var3]]', '[[Var4]]'].map(v => (
-                          <button key={v} className="px-3 py-1.5 bg-white border border-gray-300 rounded text-xs font-bold text-gray-600 hover:border-[#4c3963] hover:text-[#4c3963] transition-all shadow-sm">
+                          <button 
+                            key={v} 
+                            className="px-3 py-1.5 bg-white border border-gray-300 rounded text-xs font-bold text-gray-600 hover:border-[#4c3963] hover:text-[#4c3963] transition-all shadow-sm"
+                            onClick={() => setCampaignData({...campaignData, messageTemplate: (campaignData.messageTemplate || '') + v})}
+                          >
                             {v}
                           </button>
                         ))}
@@ -801,6 +841,9 @@ const NewCampaignWizard = () => {
                       </div>
                     </div>
                   </div>
+                  {validationErrors.messageTemplate && (
+                    <p className="text-red-500 text-xs mt-2 font-medium">{validationErrors.messageTemplate}</p>
+                  )}
                 </div>
 
                 {/* Block 2: Customize PDF Name */}
@@ -877,21 +920,193 @@ const NewCampaignWizard = () => {
                 </div>
               </div>
             )}
+
+            {/* Step 6: Review & Confirm */}
+            {currentStep === 6 && (
+              <div className="max-w-3xl mx-auto mt-4 space-y-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-2xl font-bold text-[#4c3963] mb-2">Review Your Campaign</h2>
+                  <p className="text-gray-500 text-sm">Please review all details before sending.</p>
+                </div>
+
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Campaign Info */}
+                  <div className="bg-gradient-to-br from-purple-50 to-white border border-purple-100 rounded-xl p-5 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 rounded-lg bg-[#4c3963] text-white flex items-center justify-center">
+                        <MessageSquare size={16} />
+                      </div>
+                      <h4 className="font-bold text-[#4c3963] text-sm">Campaign Info</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Name</span>
+                        <span className="font-semibold text-gray-800">{campaignData.name || 'Untitled'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Customer</span>
+                        <span className="font-semibold text-gray-800">{getCustomerName()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Type</span>
+                        <span className="font-semibold text-gray-800">{campaignData.type}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recipients */}
+                  <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-100 rounded-xl p-5 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+                        <Users size={16} />
+                      </div>
+                      <h4 className="font-bold text-blue-700 text-sm">Recipients</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Total Contacts</span>
+                        <span className="font-bold text-2xl text-blue-700">{campaignData.contacts.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">With valid numbers</span>
+                        <span className="font-semibold text-gray-800">
+                          {campaignData.contacts.filter(c => c.number && c.number.trim()).length}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Schedule */}
+                  <div className="bg-gradient-to-br from-amber-50 to-white border border-amber-100 rounded-xl p-5 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center">
+                        <Clock size={16} />
+                      </div>
+                      <h4 className="font-bold text-amber-700 text-sm">Schedule</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Mode</span>
+                        <span className="font-semibold text-gray-800">{isScheduled ? 'Scheduled' : 'Send Now'}</span>
+                      </div>
+                      {isScheduled && campaignData.scheduleDateTime && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Date & Time</span>
+                          <span className="font-semibold text-gray-800">
+                            {new Date(campaignData.scheduleDateTime).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Delay</span>
+                        <span className="font-semibold text-gray-800">{campaignData.delayFrom}s – {campaignData.delayTo}s</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Attachment */}
+                  <div className="bg-gradient-to-br from-green-50 to-white border border-green-100 rounded-xl p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-green-600 text-white flex items-center justify-center">
+                          <Paperclip size={16} />
+                        </div>
+                        <h4 className="font-bold text-green-700 text-sm">Attachment</h4>
+                      </div>
+                      {getAttachmentInfo() && (
+                        <button
+                          type="button"
+                          onClick={() => window.open(getAttachmentInfo().url, '_blank')}
+                          className="text-xs text-green-700 hover:text-green-900 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                          title="Open in new window"
+                        >
+                          <ExternalLink size={12} />
+                          <span>New Tab</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-sm">
+                      {getAttachmentInfo() ? (
+                        <div 
+                          onClick={() => setAttachmentModalOpen(true)}
+                          className="flex items-center justify-between p-2.5 bg-white border border-gray-200 rounded-lg shadow-2xs hover:border-green-400 hover:shadow-sm cursor-pointer transition-all group"
+                          title="Click to preview attachment"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 bg-gray-50 border border-gray-200 rounded-md overflow-hidden flex items-center justify-center shrink-0">
+                              {getAttachmentInfo().isPdf ? (
+                                <FileText size={22} className="text-red-500" />
+                              ) : (
+                                <img src={getAttachmentInfo().url} alt="" className="w-full h-full object-cover" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-gray-800 text-xs truncate group-hover:text-green-700 transition-colors">
+                                {getAttachmentInfo().name}
+                              </div>
+                              <div className="text-gray-400 text-[10px]">{getAttachmentInfo().size}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-green-600 font-medium pl-2 shrink-0 group-hover:text-green-800">
+                            <Eye size={14} />
+                            <span className="hidden sm:inline">Preview</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-gray-400 font-medium py-2 text-center text-xs">No file attached</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Message Preview */}
+                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                  <h4 className="font-bold text-[#4c3963] text-sm mb-3">Message Preview</h4>
+                  <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap max-h-40 overflow-y-auto border border-gray-100">
+                    {campaignData.messageTemplate 
+                      ? (campaignData.messageTemplate.length > 500 
+                          ? campaignData.messageTemplate.substring(0, 500) + '...' 
+                          : campaignData.messageTemplate)
+                      : <span className="text-gray-400 italic">No message set</span>
+                    }
+                  </div>
+                </div>
+
+                {/* Validation errors summary */}
+                {Object.keys(validationErrors).length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                    <h4 className="font-bold text-red-700 text-sm mb-2">Please fix the following:</h4>
+                    <ul className="list-disc list-inside text-sm text-red-600 space-y-1">
+                      {Object.values(validationErrors).map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           {/* Action Footer */}
           <div className="p-4 border-t border-gray-200 flex justify-end gap-3 bg-white mt-8 mx-6 mb-6 rounded-b-xl shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-             {currentStep === 5 && (
-               <>
-                 <button className="px-6 py-2.5 text-gray-700 border border-gray-300 rounded-md font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors">
-                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"></path><path d="M22 2l-7 20-4-9-9-4 20-7z"></path></svg>
-                   Test
-                 </button>
-                 <button onClick={handleSaveDraft} className="px-6 py-2.5 text-gray-700 border border-gray-300 rounded-md font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors">
-                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                   Save
-                 </button>
-               </>
+             {/* Save as Draft — available on every step */}
+             <button 
+               onClick={handleSaveDraft} 
+               disabled={isSubmitting}
+               className="px-6 py-2.5 text-gray-700 border border-gray-300 rounded-md font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+             >
+               {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+               )}
+               Save as Draft
+             </button>
+
+             {currentStep === 6 && (
+               <button className="px-6 py-2.5 text-gray-700 border border-gray-300 rounded-md font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"></path><path d="M22 2l-7 20-4-9-9-4 20-7z"></path></svg>
+                 Test
+               </button>
              )}
              
              {currentStep > 1 && (
@@ -900,18 +1115,92 @@ const NewCampaignWizard = () => {
                </button>
              )}
              
-             {currentStep < 5 ? (
+             {currentStep < 6 ? (
                <button onClick={nextStep} className="px-6 py-2.5 bg-[#3b2a50] text-white rounded-md font-bold text-sm hover:bg-[#2d1b4e] transition-colors flex items-center gap-2 shadow-md">
                  Next &rarr;
                </button>
              ) : (
-               <button onClick={handleSend} className="px-6 py-2.5 bg-[#3b2a50] text-white rounded-md font-bold text-sm hover:bg-[#2d1b4e] transition-colors flex items-center gap-2 shadow-md">
-                 Send &rarr;
+               <button 
+                 onClick={handleSend} 
+                 disabled={isSubmitting}
+                 className="px-6 py-2.5 bg-[#3b2a50] text-white rounded-md font-bold text-sm hover:bg-[#2d1b4e] transition-colors flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 {isSubmitting ? (
+                   <>
+                     <Loader2 size={16} className="animate-spin" />
+                     Sending...
+                   </>
+                 ) : (
+                   <>Confirm & Send &rarr;</>
+                 )}
                </button>
              )}
           </div>
         </div>
       </div>
+
+      {/* Attachment Preview Modal */}
+      {attachmentModalOpen && getAttachmentInfo() && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+          onClick={() => setAttachmentModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center shrink-0 font-bold">
+                  {getAttachmentInfo().isPdf ? <FileText size={18} /> : <Paperclip size={18} />}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-gray-800 text-sm truncate">{getAttachmentInfo().name}</h3>
+                  <span className="text-xs text-gray-400">{getAttachmentInfo().size}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => window.open(getAttachmentInfo().url, '_blank')}
+                  className="px-3 py-1.5 bg-white text-gray-700 hover:text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-2xs"
+                  title="Open in new window"
+                >
+                  <ExternalLink size={13} />
+                  <span>Open in New Tab</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttachmentModalOpen(false)}
+                  className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Preview */}
+            <div className="flex-1 p-4 bg-[#f0f2f5] overflow-auto flex items-center justify-center min-h-[450px]">
+              {getAttachmentInfo().isPdf ? (
+                <iframe
+                  src={getAttachmentInfo().url}
+                  title="PDF Attachment Preview"
+                  className="w-full h-[65vh] rounded-lg border border-gray-300 bg-white shadow-sm"
+                />
+              ) : (
+                <img
+                  src={getAttachmentInfo().url}
+                  alt={getAttachmentInfo().name}
+                  className="max-w-full max-h-[70vh] rounded-lg object-contain shadow-md"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

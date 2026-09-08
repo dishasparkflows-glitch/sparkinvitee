@@ -15,6 +15,6 @@ const transactionSchema = new mongoose.Schema({
   status: { type: String, enum: ['Requested', 'Completed', 'Rejected'], default: 'Completed' },
   
   balanceAfter: { type: Number, required: true }
-}, { timestamps: true });
+}, { timestamps: true, versionKey: false });
 
 export default mongoose.model('Transaction', transactionSchema);

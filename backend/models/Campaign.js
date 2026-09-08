@@ -5,7 +5,8 @@ const campaignSchema = new mongoose.Schema({
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
   name: { type: String, required: true },
   type: { type: String, enum: ['Send With Document', 'Only Message'], required: true },
-  status: { type: String, enum: ['Drafted', 'Scheduled', 'In-Process', 'Completed', 'Partially Failed', 'Failed', 'Cancelled'], default: 'Drafted' },
+  status: { type: String, enum: ['Drafted', 'Scheduled', 'In-Process', 'Paused', 'Completed', 'Partially Failed', 'Failed', 'Cancelled'], default: 'Drafted' },
+  senderNumber: { type: String },
   
   countryCode: { type: String, default: '91' },
   allowDuplicates: { type: Boolean, default: false },
@@ -33,7 +34,14 @@ const campaignSchema = new mongoose.Schema({
       delivered: Date,
       seen: Date,
       failed: Boolean,
-      invalid: Boolean
+      invalid: Boolean,
+      failureReason: String,
+      retryStatus: { type: String, enum: ['Queued', 'Sending', 'Sent', 'Delivered', 'Seen', 'Failed', 'Status unknown'] },
+      textSent: { type: Boolean, default: false },
+      mediaSent: { type: Boolean, default: false },
+      textFailed: { type: Boolean, default: false },
+      mediaFailed: { type: Boolean, default: false },
+      lastRetriedAt: Date
     }
   }],
   
@@ -47,6 +55,6 @@ const campaignSchema = new mongoose.Schema({
     failed: { type: Number, default: 0 },
     invalid: { type: Number, default: 0 }
   }
-}, { timestamps: true });
+}, { timestamps: true, versionKey: false });
 
 export default mongoose.model('Campaign', campaignSchema);

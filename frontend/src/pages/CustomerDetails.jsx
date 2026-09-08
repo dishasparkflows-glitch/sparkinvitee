@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, LogOut, CloudOff, Phone, Search, MoreVertical, Edit, Plus, X, Eye, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import ConfirmationModal from '../components/ConfirmationModal';
+import CustomerFormModal from '../components/CustomerFormModal';
 
 const CustomerDetails = () => {
   const { id } = useParams();
@@ -20,6 +21,8 @@ const CustomerDetails = () => {
   const menuRef = useRef(null);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [disconnectWarning, setDisconnectWarning] = useState(null);
+  const [deleteCampaignId, setDeleteCampaignId] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const tabs = ['All', 'Drafted', 'Scheduled', 'In-Process', 'Completed', 'Partially Failed', 'Failed', 'Cancelled'];
 
@@ -50,17 +53,24 @@ const CustomerDetails = () => {
       .then(res => setCampaigns(res.data))
       .catch(err => console.error('Error fetching campaigns:', err));
   };
-  
-  const handleDeleteCampaign = async (campaignId) => {
-    if (window.confirm('Are you sure you want to delete this campaign?')) {
-      try {
-        await axios.delete(`${import.meta.env.VITE_API_URL}/api/campaigns/${campaignId}`);
-        setCampaigns(campaigns.filter(c => c._id !== campaignId));
-      } catch (err) {
-        console.error(err);
-        alert('Error deleting campaign');
-      }
+
+  const handleSaveCustomer = (updatedCustomer) => {
+    setCustomer(updatedCustomer);
+    if (updatedCustomer.whatsapp?.status) {
+      setStatus(updatedCustomer.whatsapp.status);
     }
+  };
+  
+  const handleDeleteCampaign = async () => {
+    if (!deleteCampaignId) return;
+    try {
+      await axios.delete(`${import.meta.env.VITE_API_URL}/api/campaigns/${deleteCampaignId}`);
+      setCampaigns(campaigns.filter(c => c._id !== deleteCampaignId));
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting campaign');
+    }
+    setDeleteCampaignId(null);
     setOpenMenuId(null);
   };
 
@@ -161,7 +171,10 @@ const CustomerDetails = () => {
           {/* Personal Details Card */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 relative">
             <h2 className="text-lg font-bold text-[#4c3963] mb-6">Personal Details</h2>
-            <button className="absolute top-6 right-6 text-[var(--color-primary)] font-medium text-sm hover:underline">
+            <button 
+              onClick={() => setIsEditModalOpen(true)}
+              className="absolute top-6 right-6 text-[var(--color-primary)] font-medium text-sm hover:underline cursor-pointer"
+            >
               Edit
             </button>
             
@@ -323,7 +336,11 @@ const CustomerDetails = () => {
               </thead>
               <tbody>
                 {filteredCampaigns.map((c) => (
-                  <tr key={c._id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/campaigns/${c._id}`)}>
+                  <tr 
+                    key={c._id} 
+                    className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" 
+                    onClick={() => navigate(c.status === 'Drafted' ? `/campaigns/edit/${c._id}` : `/campaigns/${c._id}`)}
+                  >
                     <td className="py-4 px-2 text-sm text-gray-500 font-medium">{c.name}</td>
                     <td className="py-4 px-2 text-sm text-gray-500 font-medium">{c.type}</td>
                     <td className="py-4 px-2">
@@ -339,48 +356,39 @@ const CustomerDetails = () => {
                     <td className="py-4 px-2 text-sm text-gray-500 font-medium">{c.stats?.totalRecipients || c.contacts?.length || 0}</td>
                     <td className="py-4 px-2 text-sm text-gray-500 font-medium">{c.stats?.creditsUsed || c.contacts?.length || 0}</td>
                     <td className="py-4 px-2 text-xs text-gray-500 font-medium">{formatDate(c.createdAt)}</td>
-                    <td className="py-4 px-2 text-right relative">
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          setOpenMenuId(openMenuId === c._id ? null : c._id);
-                        }}
-                        className="p-1 hover:bg-gray-200 rounded-md text-gray-400 hover:text-gray-700 focus:outline-none"
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                      
-                      {openMenuId === c._id && (
-                        <div ref={menuRef} onClick={(e) => e.stopPropagation()} className="absolute right-8 top-10 w-32 bg-white rounded-md shadow-lg border border-gray-100 z-10 overflow-hidden py-1 text-left">
-                          <button 
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              navigate(`/campaigns/${c._id}`);
-                            }}
-                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                          >
-                            <Eye size={14} />
-                            View
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              navigate(`/campaigns/edit/${c._id}`);
-                            }}
-                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                          >
-                            <Edit size={14} />
-                            Edit
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteCampaign(c._id)}
-                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                          >
-                            <Trash2 size={14} />
-                            Delete
-                          </button>
-                        </div>
-                      )}
+                    <td className="py-4 px-2 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(c.status === 'Drafted' ? `/campaigns/edit/${c._id}` : `/campaigns/${c._id}`);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
+                          title="View"
+                        >
+                          <Eye size={18} />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/campaigns/edit/${c._id}`);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
+                          title="Edit"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteCampaignId(c._id);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -474,6 +482,24 @@ const CustomerDetails = () => {
         title="Disconnect WhatsApp"
         message="This disconnects your WhatsApp account. You will need to scan the QR code again to reconnect."
         confirmText="Disconnect"
+      />
+
+      {/* Delete Campaign Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={!!deleteCampaignId}
+        onClose={() => setDeleteCampaignId(null)}
+        onConfirm={handleDeleteCampaign}
+        title="Delete Campaign"
+        message="Are you sure you want to delete this campaign? This action cannot be undone."
+        confirmText="Delete"
+      />
+
+      {/* Edit Customer Modal */}
+      <CustomerFormModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onSave={handleSaveCustomer}
+        initialData={customer}
       />
 
       {/* Warning banner if remote logout failed */}

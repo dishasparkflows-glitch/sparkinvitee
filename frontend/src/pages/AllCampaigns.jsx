@@ -1,31 +1,31 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MoreVertical, Eye, Trash2, Edit, X } from 'lucide-react';
+import { Search, Eye, Trash2, Edit, X, Pause, Play, Ban, Calendar } from 'lucide-react';
 import axios from 'axios';
 import Pagination from '../components/Pagination';
+import ConfirmationModal from '../components/ConfirmationModal';
+import Dropdown from '../components/Dropdown';
 
 const AllCampaigns = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('All');
   const [campaigns, setCampaigns] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [openMenuId, setOpenMenuId] = useState(null);
-  const menuRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  
-  const tabs = ['All', 'Completed', 'Drafted', 'Scheduled', 'In-Process', 'Partially Failed', 'Failed', 'Cancelled'];
+
+  // Filters
+  const [customerFilter, setCustomerFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Confirmation modal state
+  const [modal, setModal] = useState({ open: false, title: '', message: '', onConfirm: null, isDestructive: true });
+
+  const tabs = ['All', 'Completed', 'Drafted', 'Scheduled', 'In-Process', 'Paused', 'Partially Failed', 'Failed', 'Cancelled'];
 
   useEffect(() => {
     fetchCampaigns();
-    
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setOpenMenuId(null);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const fetchCampaigns = () => {
@@ -34,30 +34,98 @@ const AllCampaigns = () => {
       .catch(err => console.error('Error fetching campaigns:', err));
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this campaign?')) {
-      try {
-        await axios.delete(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`);
-        setCampaigns(campaigns.filter(c => c._id !== id));
-      } catch (err) {
-        console.error(err);
-        alert('Error deleting campaign');
+  // Unique customers for filter dropdown
+  const customerOptions = useMemo(() => {
+    const map = new Map();
+    campaigns.forEach(c => {
+      if (c.customerId?._id && c.customerId?.name) {
+        map.set(c.customerId._id, c.customerId.name);
       }
-    }
-    setOpenMenuId(null);
+    });
+    return [
+      { value: 'All', label: 'All Customers' },
+      ...Array.from(map, ([id, name]) => ({ value: id, label: name }))
+    ];
+  }, [campaigns]);
+
+  // Tab counts
+  const tabCounts = useMemo(() => {
+    const counts = {};
+    tabs.forEach(t => { counts[t] = t === 'All' ? campaigns.length : 0; });
+    campaigns.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
+    return counts;
+  }, [campaigns]);
+
+  const handleDelete = async (id) => {
+    setModal({
+      open: true,
+      title: 'Delete Campaign',
+      message: 'Are you sure you want to permanently delete this campaign? This action cannot be undone.',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await axios.delete(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`);
+          setCampaigns(campaigns.filter(c => c._id !== id));
+        } catch (err) {
+          console.error(err);
+          alert('Error deleting campaign');
+        }
+      }
+    });
   };
 
   const handleCancel = async (id) => {
-    if (window.confirm('Are you sure you want to cancel this campaign?')) {
-      try {
-        await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/cancel`);
-        fetchCampaigns();
-      } catch (err) {
-        console.error(err);
-        alert('Error cancelling campaign');
+    setModal({
+      open: true,
+      title: 'Cancel Campaign',
+      message: 'This will stop all remaining messages from being sent. Already-sent messages will NOT be recalled or deleted from recipients\' devices.',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/cancel`);
+          fetchCampaigns();
+        } catch (err) {
+          console.error(err);
+          alert('Error cancelling campaign');
+        }
       }
-    }
-    setOpenMenuId(null);
+    });
+  };
+
+  const handlePause = async (id) => {
+    setModal({
+      open: true,
+      title: 'Pause Campaign',
+      message: 'This will pause the campaign. No more messages will be sent until you resume it.',
+      isDestructive: false,
+      onConfirm: async () => {
+        try {
+          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/pause`);
+          fetchCampaigns();
+        } catch (err) {
+          console.error(err);
+          alert('Error pausing campaign');
+        }
+      }
+    });
+  };
+
+  const handleResume = async (id) => {
+    setModal({
+      open: true,
+      title: 'Resume Campaign',
+      message: 'This will resume sending remaining messages. Already-sent contacts will be skipped.',
+      isDestructive: false,
+      onConfirm: async () => {
+        try {
+          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/resume`);
+          fetchCampaigns();
+        } catch (err) {
+          console.error(err);
+          alert('Error resuming campaign');
+        }
+      }
+    });
   };
 
   const formatDate = (dateString) => {
@@ -82,11 +150,40 @@ const AllCampaigns = () => {
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (c.customerId?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                           c.type.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesSearch;
+    const matchesCustomer = customerFilter === 'All' || c.customerId?._id === customerFilter;
+
+    // Date filter
+    let matchesDate = true;
+    if (dateFrom) {
+      matchesDate = matchesDate && new Date(c.createdAt) >= new Date(dateFrom);
+    }
+    if (dateTo) {
+      const toEnd = new Date(dateTo);
+      toEnd.setHours(23, 59, 59, 999);
+      matchesDate = matchesDate && new Date(c.createdAt) <= toEnd;
+    }
+
+    return matchesTab && matchesSearch && matchesCustomer && matchesDate;
   });
+
+  const getProgressPercent = (stats) => {
+    if (!stats || !stats.totalRecipients) return 0;
+    return Math.round(((stats.sent + stats.failed) / stats.totalRecipients) * 100);
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 min-h-[500px]">
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={modal.open}
+        onClose={() => setModal({ ...modal, open: false })}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        isDestructive={modal.isDestructive}
+        confirmText={modal.isDestructive ? 'Yes, Proceed' : 'Confirm'}
+      />
+
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">All Campaigns</h1>
         
@@ -107,19 +204,64 @@ const AllCampaigns = () => {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Filters Row */}
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <div className="w-52">
+          <Dropdown 
+            value={customerFilter}
+            onChange={(val) => { setCustomerFilter(val); setCurrentPage(1); }}
+            options={customerOptions}
+            placeholder="Filter by Customer"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Calendar size={16} className="text-gray-400" />
+          <input 
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
+            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-[var(--color-primary)]"
+            placeholder="From"
+          />
+          <span className="text-gray-400 text-sm">to</span>
+          <input 
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
+            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-[var(--color-primary)]"
+            placeholder="To"
+          />
+          {(dateFrom || dateTo) && (
+            <button 
+              onClick={() => { setDateFrom(''); setDateTo(''); setCurrentPage(1); }}
+              className="text-xs text-red-500 hover:text-red-700 font-medium"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs with Counts */}
       <div className="flex border-b border-gray-200 mb-6 overflow-x-auto no-scrollbar">
         {tabs.map(tab => (
           <button 
             key={tab}
             onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
-            className={`px-4 py-3 whitespace-nowrap font-medium transition-colors border-b-2 ${
+            className={`px-4 py-3 whitespace-nowrap font-medium transition-colors border-b-2 flex items-center gap-2 ${
               activeTab === tab 
                 ? 'border-[var(--color-primary)] text-[var(--color-primary)]' 
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             {tab}
+            <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center ${
+              activeTab === tab
+                ? 'bg-[var(--color-primary)] text-white'
+                : 'bg-gray-100 text-gray-500'
+            }`}>
+              {tabCounts[tab] || 0}
+            </span>
           </button>
         ))}
       </div>
@@ -140,8 +282,11 @@ const AllCampaigns = () => {
                 <th className="py-3 px-4 font-medium w-12">#</th>
                 <th className="py-3 px-4 font-medium">Campaign & Customer Name</th>
                 <th className="py-3 px-4 font-medium">Type</th>
-                <th className="py-3 px-4 font-medium">Total Recipients</th>
-                <th className="py-3 px-4 font-medium">Credits Used</th>
+                <th className="py-3 px-4 font-medium text-center">Progress</th>
+                <th className="py-3 px-4 font-medium text-center">Sent</th>
+                <th className="py-3 px-4 font-medium text-center">Failed</th>
+                <th className="py-3 px-4 font-medium text-center">Pending</th>
+                <th className="py-3 px-4 font-medium">Sender</th>
                 <th className="py-3 px-4 font-medium">Status</th>
                 <th className="py-3 px-4 font-medium">Date & Time</th>
                 <th className="py-3 px-4 font-medium text-right">Action</th>
@@ -150,8 +295,20 @@ const AllCampaigns = () => {
             <tbody>
               {filteredCampaigns
                 .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                .map((c, index) => (
-                <tr key={c._id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/campaigns/${c._id}`)}>
+                .map((c, index) => {
+                  const progress = getProgressPercent(c.stats);
+                  const sentCount = c.stats?.sent || 0;
+                  const failedCount = c.stats?.failed || 0;
+                  const pendingCount = c.stats?.inQueue || 0;
+                  const total = c.stats?.totalRecipients || 0;
+                  const senderNum = c.senderNumber || c.customerId?.whatsapp?.mobileNo || '-';
+
+                  return (
+                <tr 
+                  key={c._id} 
+                  className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" 
+                  onClick={() => navigate(c.status === 'Drafted' ? `/campaigns/edit/${c._id}` : `/campaigns/${c._id}`)}
+                >
                   <td className="py-4 px-4 text-sm text-gray-400 font-medium">
                     {(currentPage - 1) * itemsPerPage + index + 1}
                   </td>
@@ -160,55 +317,151 @@ const AllCampaigns = () => {
                     <div className="text-xs text-gray-500">{c.customerId?.name || '-'}</div>
                   </td>
                   <td className="py-4 px-4 text-sm">{c.type}</td>
-                  <td className="py-4 px-4 font-medium">{c.stats?.totalRecipients || c.contacts?.length || 0}</td>
-                  <td className="py-4 px-4 text-sm">{c.stats?.creditsUsed || c.contacts?.length || 0}</td>
+
+                  {/* Progress Bar */}
+                  <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                      <span className="text-xs font-semibold text-gray-600">{progress}%</span>
+                      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        {total > 0 && (
+                          <div className="h-full flex">
+                            <div
+                              className="bg-green-500 h-full transition-all duration-500"
+                              style={{ width: `${(sentCount / total) * 100}%` }}
+                            />
+                            <div
+                              className="bg-red-400 h-full transition-all duration-500"
+                              style={{ width: `${(failedCount / total) * 100}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Sent / Failed / Pending */}
+                  <td className="py-4 px-4 text-center">
+                    <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded">{sentCount}</span>
+                  </td>
+                  <td className="py-4 px-4 text-center">
+                    <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded">{failedCount}</span>
+                  </td>
+                  <td className="py-4 px-4 text-center">
+                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded">{pendingCount}</span>
+                  </td>
+
+                  {/* Sender Number */}
+                  <td className="py-4 px-4 text-sm text-gray-600 font-mono">{senderNum}</td>
+
+                  {/* Status Badge */}
                   <td className="py-4 px-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                       c.status === 'Completed' ? 'bg-[var(--color-status-completed)] text-[var(--color-status-completed-text)]' : 
                       c.status === 'Failed' || c.status === 'Cancelled' ? 'bg-[var(--color-status-failed)] text-[var(--color-status-failed-text)]' :
                       c.status === 'Drafted' ? 'bg-[var(--color-status-drafted)] text-[var(--color-status-drafted-text)]' :
+                      c.status === 'Paused' ? 'bg-yellow-100 text-yellow-700' :
                       'bg-[var(--color-status-inprocess)] text-[var(--color-status-inprocess-text)]'
                     }`}>
                       {c.status}
                     </span>
                   </td>
                   <td className="py-4 px-4 text-sm text-gray-500">{formatDate(c.createdAt)}</td>
-                  <td className="py-4 px-4 text-right relative">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => navigate(`/campaigns/${c._id}`)} 
-                        className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
-                        title="View"
-                      >
-                        <Eye size={18} />
-                      </button>
-                      <button 
-                        onClick={() => navigate(`/campaigns/edit/${c._id}`)} 
-                        className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors" 
-                        title="Edit"
-                      >
-                        <Edit size={18} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(c._id)} 
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
-                        title="Delete"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                      {['Drafted', 'Scheduled', 'In-Process'].includes(c.status) && (
+                  <td className="py-4 px-4 text-right relative" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      {/* View */}
+                      <div className="group relative">
                         <button 
-                          onClick={() => handleCancel(c._id)} 
-                          className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors" 
-                          title="Cancel"
+                          onClick={() => navigate(c.status === 'Drafted' ? `/campaigns/edit/${c._id}` : `/campaigns/${c._id}`)} 
+                          className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors"
                         >
-                          <X size={18} />
+                          <Eye size={18} />
                         </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-gray-800 text-white text-[10px] font-medium rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg">
+                          View Details
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-gray-800"></div>
+                        </div>
+                      </div>
+
+                      {/* Edit */}
+                      <div className="group relative">
+                        <button 
+                          onClick={() => navigate(`/campaigns/edit/${c._id}`)} 
+                          className="p-1.5 text-gray-400 hover:text-[#5b528b] hover:bg-purple-50 rounded-md transition-colors"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-gray-800 text-white text-[10px] font-medium rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg">
+                          Edit Campaign
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-gray-800"></div>
+                        </div>
+                      </div>
+
+                      {/* Delete */}
+                      <div className="group relative">
+                        <button 
+                          onClick={() => handleDelete(c._id)} 
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-gray-800 text-white text-[10px] font-medium rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg">
+                          Delete Campaign
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-gray-800"></div>
+                        </div>
+                      </div>
+
+                      {/* Pause — visible when In-Process */}
+                      {c.status === 'In-Process' && (
+                        <div className="group relative">
+                          <button 
+                            onClick={() => handlePause(c._id)} 
+                            className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-md transition-colors"
+                          >
+                            <Pause size={18} />
+                          </button>
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-gray-800 text-white text-[10px] font-medium rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg">
+                            Pause Campaign
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-gray-800"></div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Resume — visible when Paused */}
+                      {c.status === 'Paused' && (
+                        <div className="group relative">
+                          <button 
+                            onClick={() => handleResume(c._id)} 
+                            className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors"
+                          >
+                            <Play size={18} />
+                          </button>
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-gray-800 text-white text-[10px] font-medium rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg">
+                            Resume Campaign
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-gray-800"></div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Cancel — visible for active states */}
+                      {['Drafted', 'Scheduled', 'In-Process', 'Paused'].includes(c.status) && (
+                        <div className="group relative">
+                          <button 
+                            onClick={() => handleCancel(c._id)} 
+                            className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors"
+                          >
+                            <Ban size={18} />
+                          </button>
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-gray-800 text-white text-[10px] font-medium rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50 pointer-events-none shadow-lg">
+                            Cancel Campaign
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-gray-800"></div>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </td>
                 </tr>
-              ))}
+                  );
+                })}
             </tbody>
           </table>
           

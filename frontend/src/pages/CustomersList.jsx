@@ -4,77 +4,7 @@ import { Search, Plus, X, Eye, Edit, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Pagination from '../components/Pagination';
-
-const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
-  const [formData, setFormData] = useState({ name: '', email: '', mobile: '', address: '' });
-  
-  useEffect(() => {
-    if (initialData) {
-      setFormData({
-        name: initialData.name || '',
-        email: initialData.email || '',
-        mobile: initialData.mobile || '',
-        address: initialData.address || ''
-      });
-    } else {
-      setFormData({ name: '', email: '', mobile: '', address: '' });
-    }
-  }, [initialData, isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (initialData && initialData._id) {
-        // Edit mode
-        const res = await axios.put(`${import.meta.env.VITE_API_URL}/api/customers/${initialData._id}`, formData);
-        onSave(res.data, 'edit');
-      } else {
-        // Add mode
-        const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/customers`, formData);
-        onSave(res.data, 'add');
-      }
-      onClose();
-    } catch (err) {
-      console.error(err);
-      alert('Error saving customer');
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-[500px] overflow-hidden">
-        <div className="flex justify-between items-center p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold">{initialData ? 'Edit Customer' : 'Add Customer'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input required type="text" className="w-full px-4 py-2 border rounded-md" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input required type="email" className="w-full px-4 py-2 border rounded-md" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile</label>
-            <input required type="text" className="w-full px-4 py-2 border rounded-md" value={formData.mobile} onChange={e => setFormData({...formData, mobile: e.target.value})} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-            <input required type="text" className="w-full px-4 py-2 border rounded-md" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
-          </div>
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <button type="button" onClick={onClose} className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[var(--color-primary)] text-white rounded-md hover:bg-opacity-90">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
+import CustomerFormModal from '../components/CustomerFormModal';
 
 const CustomersList = () => {
   const navigate = useNavigate();

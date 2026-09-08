@@ -5,8 +5,6 @@ import mongoose from 'mongoose';
 import Customer from '../models/Customer.js';
 import BaileysAuth from '../models/BaileysAuth.js';
 import { handleMessageCreate, handleMessageAck } from './whatsappHandlers.js';
-import fs from 'fs';
-import path from 'path';
 
 const sessions = new Map();
 const logger = pino({ level: 'silent' });
@@ -354,43 +352,104 @@ export const disconnectBaileysSession = async (customerId) => {
   }
 };
 
-export const sendBaileysMessage = async (customerId, number, text, base64Media, mimeType, filename, campaignId, contactId) => {
+export const sendBaileysMessage = async (customerId, number, text, base64Media, mimeType, filename, campaignId, contactId, options = {}) => {
   const custIdStr = customerId.toString();
 
   // Guard: block sending if unlinking
   if (unlinkingCustomers.has(custIdStr)) {
-    throw new Error('Cannot send message — WhatsApp connection is being unlinked');
+    const err = new Error('WhatsApp is disconnected / unlinking');
+    err.code = 'WHATSAPP_DISCONNECTED';
+    throw err;
   }
 
   const session = sessions.get(custIdStr);
   if (!session || session.status !== 'CONNECTED' || !session.sock) {
-    throw new Error('Baileys client not connected');
+    const err = new Error('WhatsApp client not connected');
+    err.code = 'WHATSAPP_DISCONNECTED';
+    throw err;
   }
 
-  const cleanNumber = number.toString().replace(/\D/g, '');
+  const cleanNumber = number ? number.toString().replace(/\D/g, '') : '';
+  if (!cleanNumber || cleanNumber.length < 10) {
+    const err = new Error('Invalid phone number');
+    err.code = 'INVALID_NUMBER';
+    throw err;
+  }
+
   let jid = `${cleanNumber}@s.whatsapp.net`;
   if (cleanNumber.length === 10) {
     jid = `91${cleanNumber}@s.whatsapp.net`;
   }
 
-  const [result] = await session.sock.onWhatsApp(jid);
-  if (!result || !result.exists) {
-    throw new Error(`Number ${cleanNumber} is not registered on WhatsApp`);
+  // Check if number exists on WhatsApp with timeout
+  let onWaResult;
+  try {
+    const checkWaPromise = session.sock.onWhatsApp(jid);
+    const checkTimeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout - Status unknown')), 15000)
+    );
+    const [result] = await Promise.race([checkWaPromise, checkTimeoutPromise]);
+    onWaResult = result;
+  } catch (err) {
+    if (err.message.includes('Timeout')) {
+      const e = new Error('Timeout - Status unknown');
+      e.code = 'TIMEOUT_UNKNOWN';
+      throw e;
+    }
+    throw err;
+  }
+
+  if (!onWaResult || !onWaResult.exists) {
+    const err = new Error('WhatsApp uninstalled / not registered');
+    err.code = 'NOT_REGISTERED';
+    throw err;
   }
 
   let message = {};
-  if (base64Media && mimeType) {
-    message = {
-      document: Buffer.from(base64Media, 'base64'),
-      mimetype: mimeType,
-      fileName: filename || 'document.pdf',
-      caption: text || ''
-    };
-  } else if (text) {
-    message = { text };
+  const onlyPart = options.onlyPart; // 'text' | 'media' | 'all'
+
+  if (onlyPart === 'text') {
+    message = { text: text || '' };
+  } else if (onlyPart === 'media') {
+    if (base64Media && mimeType) {
+      message = {
+        document: Buffer.from(base64Media, 'base64'),
+        mimetype: mimeType,
+        fileName: filename || 'document.pdf'
+      };
+    } else {
+      message = { text: text || '' };
+    }
+  } else {
+    // Normal / 'all'
+    if (base64Media && mimeType) {
+      message = {
+        document: Buffer.from(base64Media, 'base64'),
+        mimetype: mimeType,
+        fileName: filename || 'document.pdf',
+        caption: text || ''
+      };
+    } else if (text) {
+      message = { text };
+    }
   }
 
-  const sentMsg = await session.sock.sendMessage(result.jid, message);
+  // Send message with timeout protection
+  let sentMsg;
+  try {
+    const sendPromise = session.sock.sendMessage(onWaResult.jid || jid, message);
+    const sendTimeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout - Status unknown')), 25000)
+    );
+    sentMsg = await Promise.race([sendPromise, sendTimeoutPromise]);
+  } catch (err) {
+    if (err.message.includes('Timeout')) {
+      const e = new Error('Timeout - Status unknown');
+      e.code = 'TIMEOUT_UNKNOWN';
+      throw e;
+    }
+    throw err;
+  }
 
   if (sentMsg && sentMsg.key && sentMsg.key.id) {
     const messageId = sentMsg.key.id;

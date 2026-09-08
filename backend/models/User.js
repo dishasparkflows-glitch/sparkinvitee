@@ -9,6 +9,6 @@ const userSchema = new mongoose.Schema({
     available: { type: Number, default: 0 },
     used: { type: Number, default: 0 }
   }
-}, { timestamps: true });
+}, { timestamps: true, versionKey: false });
 
 export default mongoose.model('User', userSchema);

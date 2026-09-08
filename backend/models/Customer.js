@@ -12,6 +12,6 @@ const customerSchema = new mongoose.Schema({
     sessionData: { type: Object },
     provider: { type: String, enum: ['wwebjs', 'baileys'], default: 'wwebjs' }
   }
-}, { timestamps: true });
+}, { timestamps: true, versionKey: false });
 
 export default mongoose.model('Customer', customerSchema);

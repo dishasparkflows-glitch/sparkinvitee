@@ -208,20 +208,27 @@ export const disconnectSession = async (req, res) => {
   }
 };
 
-export const sendMessage = async (customerId, number, text, base64Media, mimeType, filename, campaignId, contactId) => {
+export const sendMessage = async (customerId, number, text, base64Media, mimeType, filename, campaignId, contactId, options = {}) => {
   const customer = await Customer.findById(customerId);
   if (customer?.whatsapp?.provider === 'baileys') {
-    return await baileysService.sendBaileysMessage(customerId, number, text, base64Media, mimeType, filename, campaignId, contactId);
+    return await baileysService.sendBaileysMessage(customerId, number, text, base64Media, mimeType, filename, campaignId, contactId, options);
   }
 
   const session = sessions.get(customerId.toString());
   if (!session || session.status !== 'CONNECTED' || !session.client) {
-    throw new Error('WhatsApp client not connected');
+    const err = new Error('WhatsApp client not connected');
+    err.code = 'WHATSAPP_DISCONNECTED';
+    throw err;
   }
 
-  const cleanNumber = number.toString().replace(/\D/g, '');
-  let chatId = `${cleanNumber}@c.us`;
+  const cleanNumber = number ? number.toString().replace(/\D/g, '') : '';
+  if (!cleanNumber || cleanNumber.length < 10) {
+    const err = new Error('Invalid phone number');
+    err.code = 'INVALID_NUMBER';
+    throw err;
+  }
 
+  let chatId = `${cleanNumber}@c.us`;
   if (cleanNumber.length === 10) {
     chatId = `91${cleanNumber}@c.us`;
   }
@@ -229,7 +236,9 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
   try {
     const registered = await session.client.getNumberId(chatId);
     if (!registered) {
-      throw new Error(`Number ${cleanNumber} is not registered on WhatsApp`);
+      const err = new Error('WhatsApp uninstalled / not registered');
+      err.code = 'NOT_REGISTERED';
+      throw err;
     }
 
     let media = null;
@@ -238,22 +247,29 @@ export const sendMessage = async (customerId, number, text, base64Media, mimeTyp
     }
 
     let sentMsg = null;
-    if (media) {
-      sentMsg = await session.client.sendMessage(registered._serialized, media, { caption: text || '' });
-    } else {
+    const onlyPart = options.onlyPart;
+
+    if (onlyPart === 'text') {
       if (text) {
         sentMsg = await session.client.sendMessage(registered._serialized, text);
       }
-    }
-    
-    if (sentMsg) {
+    } else if (onlyPart === 'media') {
+      if (media) {
+        sentMsg = await session.client.sendMessage(registered._serialized, media, { caption: '' });
+      } else if (text) {
+        sentMsg = await session.client.sendMessage(registered._serialized, text);
+      }
+    } else {
+      if (media) {
+        sentMsg = await session.client.sendMessage(registered._serialized, media, { caption: text || '' });
+      } else if (text) {
+        sentMsg = await session.client.sendMessage(registered._serialized, text);
+      }
     }
 
     if (sentMsg && sentMsg.id) {
-      // Use bare .id.id (e.g. "3EB0...") — this is what message_ack events also expose
       const messageId = sentMsg.id.id || sentMsg.id._serialized || String(sentMsg.id);
       
-      // ⚡ Save messageId to DB IMMEDIATELY — before returning — so it's ready when ACKs fire
       if (campaignId && contactId && messageId) {
         try {
           await Campaign.updateOne(

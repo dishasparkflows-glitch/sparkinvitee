@@ -13,8 +13,15 @@ router.get('/customer/:customerId', campaignController.getCampaignsByCustomerId)
 router.get('/:id', campaignController.getCampaignById);
 router.post('/', campaignController.createCampaign);
 router.put('/:id', campaignController.updateCampaign);
+router.put('/:id/pause', campaignController.pauseCampaign);
+router.put('/:id/resume', campaignController.resumeCampaign);
 router.put('/:id/cancel', campaignController.cancelCampaign);
 router.delete('/:id', campaignController.deleteCampaign);
+
+// Retry routes
+router.post('/:id/retry', campaignController.retryFailedRecipients);
+router.post('/:id/retry/:contactId', campaignController.retryFailedRecipients);
+router.put('/:id/contacts/:contactId/number', campaignController.updateRecipientNumber);
 
 // Upload routes
 router.post('/upload-file', upload.single('file'), campaignController.uploadFile);
