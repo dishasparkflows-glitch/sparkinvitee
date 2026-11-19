@@ -15,7 +15,7 @@ export const login = async (req, res) => {
     
     // 2. Check password
     const isMatch = await bcrypt.compare(password, user.password);
-    // if (!isMatch) return ApiResponse.error(res, 'Invalid credentials', 401);
+    if (!isMatch) return ApiResponse.error(res, 'Invalid credentials', 401);
     
     // 3. Generate Token
     const token = jwt.sign(

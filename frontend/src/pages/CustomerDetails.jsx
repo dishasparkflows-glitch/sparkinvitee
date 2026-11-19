@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, LogOut, CloudOff, Phone, Search, MoreVertical, Edit, Plus, X, Eye, Trash2 } from 'lucide-react';
+import { ArrowLeft, RefreshCw, CloudOff, Phone, Search, Edit, Plus, X, Eye, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import ConfirmationModal from '../components/ConfirmationModal';
 import CustomerFormModal from '../components/CustomerFormModal';
@@ -17,8 +17,6 @@ const CustomerDetails = () => {
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
-  const [openMenuId, setOpenMenuId] = useState(null);
-  const menuRef = useRef(null);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [disconnectWarning, setDisconnectWarning] = useState(null);
   const [deleteCampaignId, setDeleteCampaignId] = useState(null);
@@ -26,33 +24,25 @@ const CustomerDetails = () => {
 
   const tabs = ['All', 'Drafted', 'Scheduled', 'In-Process', 'Completed', 'Partially Failed', 'Failed', 'Cancelled'];
 
-  useEffect(() => {
-    fetchCustomerData();
-    fetchCustomerCampaigns();
-    
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setOpenMenuId(null);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [id]);
-
-  const fetchCustomerData = () => {
+  const fetchCustomerData = useCallback(() => {
     axios.get(`${import.meta.env.VITE_API_URL}/api/customers/${id}`)
       .then(res => {
         setCustomer(res.data);
         setStatus(res.data.whatsapp?.status || 'Disconnected');
       })
       .catch(err => console.error('Error fetching customer:', err));
-  };
+  }, [id]);
 
-  const fetchCustomerCampaigns = () => {
+  const fetchCustomerCampaigns = useCallback(() => {
     axios.get(`${import.meta.env.VITE_API_URL}/api/campaigns/customer/${id}`)
       .then(res => setCampaigns(res.data))
       .catch(err => console.error('Error fetching campaigns:', err));
-  };
+  }, [id]);
+
+  useEffect(() => {
+    fetchCustomerData();
+    fetchCustomerCampaigns();
+  }, [fetchCustomerData, fetchCustomerCampaigns]);
 
   const handleSaveCustomer = () => {
     fetchCustomerData();

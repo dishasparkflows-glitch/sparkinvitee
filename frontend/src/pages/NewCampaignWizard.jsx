@@ -23,7 +23,6 @@ const NewCampaignWizard = () => {
   
   const [customers, setCustomers] = useState([]);
   const [currentStep, setCurrentStep] = useState(1);
-  const [importMethod, setImportMethod] = useState('csv');
   const [isScheduled, setIsScheduled] = useState(false);
   const [manualImportModalOpen, setManualImportModalOpen] = useState(false);
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false);

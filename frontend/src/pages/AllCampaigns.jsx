@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Eye, Trash2, Edit, X, Pause, Play, Ban, Calendar } from 'lucide-react';
+import { Search, Eye, Trash2, Edit, Pause, Play, Ban } from 'lucide-react';
 import axios from 'axios';
 import Pagination from '../components/Pagination';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Dropdown from '../components/Dropdown';
 import DateSelection from '../components/DateSelection';
+
+const TABS = ['All', 'Completed', 'Drafted', 'Scheduled', 'In-Process', 'Paused', 'Partially Failed', 'Failed', 'Cancelled'];
 
 const AllCampaigns = () => {
   const navigate = useNavigate();
@@ -23,7 +25,7 @@ const AllCampaigns = () => {
   // Confirmation modal state
   const [modal, setModal] = useState({ open: false, title: '', message: '', onConfirm: null, isDestructive: true });
 
-  const tabs = ['All', 'Completed', 'Drafted', 'Scheduled', 'In-Process', 'Paused', 'Partially Failed', 'Failed', 'Cancelled'];
+  const tabs = TABS;
 
   useEffect(() => {
     fetchCampaigns();
@@ -53,7 +55,7 @@ const AllCampaigns = () => {
   // Tab counts
   const tabCounts = useMemo(() => {
     const counts = {};
-    tabs.forEach(t => { counts[t] = t === 'All' ? campaigns.length : 0; });
+    TABS.forEach(t => { counts[t] = t === 'All' ? campaigns.length : 0; });
     campaigns.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
     return counts;
   }, [campaigns]);

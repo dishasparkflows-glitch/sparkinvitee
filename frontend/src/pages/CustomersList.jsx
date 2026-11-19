@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, X, Eye, Edit, Trash2 } from 'lucide-react';
+import { Search, Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Pagination from '../components/Pagination';
@@ -12,24 +12,12 @@ const CustomersList = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
-  const [openMenuId, setOpenMenuId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  
-  const menuRef = useRef(null);
 
   useEffect(() => {
     fetchCustomers();
-    
-    // Close dropdown when clicking outside
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setOpenMenuId(null);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const fetchCustomers = () => {

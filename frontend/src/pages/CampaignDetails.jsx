@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -104,7 +104,7 @@ const CampaignDetails = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const fetchCampaign = () => {
+  const fetchCampaign = useCallback(() => {
     axios
       .get(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`)
       .then((res) => {
@@ -115,11 +115,11 @@ const CampaignDetails = () => {
         setCampaign(res.data);
       })
       .catch((err) => console.error('Error fetching campaign details:', err));
-  };
+  }, [id, navigate]);
 
   useEffect(() => {
     fetchCampaign();
-  }, [id]);
+  }, [fetchCampaign]);
 
   // Polling during active retries
   useEffect(() => {
@@ -136,7 +136,7 @@ const CampaignDetails = () => {
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [campaign, isRetryingAll]);
+  }, [campaign, isRetryingAll, fetchCampaign]);
 
   const checkWhatsAppConnected = () => {
     const customer = campaign?.customerId;
