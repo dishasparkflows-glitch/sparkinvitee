@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search } from 'lucide-react';
+import { toast } from '../utils/toast';
+import api from '../services/api';
+import Pagination from '../components/Pagination';
 
 const RequestCreditModal = ({ isOpen, onClose }) => {
   const [credit, setCredit] = useState('');
@@ -10,16 +13,16 @@ const RequestCreditModal = ({ isOpen, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const axios = (await import('axios')).default;
-      await axios.post(`${import.meta.env.VITE_API_URL}/api/transactions/request-credit`, {
+      await api.post('/transactions/request-credit', {
         creditsRequested: credit,
         description
       });
-      window.location.reload(); // simple reload to see new record
+      toast.success('Credit request submitted successfully');
+      setTimeout(() => window.location.reload(), 800);
       onClose();
     } catch (err) {
       console.error('Request failed:', err);
-      alert('Error requesting credit');
+      toast.error(err.response?.data?.message || 'Error requesting credit');
     }
   };
 
@@ -86,18 +89,37 @@ const RechargeHistory = () => {
   const [activeTab, setActiveTab] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [history, setHistory] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const tabs = ['All', 'Requested', 'Completed', 'Rejected'];
 
   useEffect(() => {
-    import('axios').then(axios => {
-      axios.default.get(`${import.meta.env.VITE_API_URL}/api/transactions/history`)
-        .then(res => setHistory(res.data.filter(t => t.type === 'Request' || t.type === 'Recharge')))
-        .catch(err => console.error('Error fetching transactions:', err));
-    });
+    api.get('/transactions/history')
+      .then(res => setHistory(res.data.filter(t => t.type === 'Request' || t.type === 'Recharge')))
+      .catch(err => console.error('Error fetching transactions:', err));
   }, []);
 
-  const filteredHistory = history.filter(h => activeTab === 'All' || h.status === activeTab);
+  const filteredHistory = useMemo(() => {
+    return history.filter(h => {
+      const matchesTab = activeTab === 'All' || h.status === activeTab;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = !q ||
+        (h.description && h.description.toLowerCase().includes(q)) ||
+        (h.status && h.status.toLowerCase().includes(q)) ||
+        (h.credits?.added && h.credits.added.toString().includes(q)) ||
+        (h.totalPrice && h.totalPrice.toString().includes(q));
+      return matchesTab && matchesSearch;
+    });
+  }, [history, activeTab, searchQuery]);
+
+  const paginatedHistory = useMemo(() => {
+    return filteredHistory.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    );
+  }, [filteredHistory, currentPage, itemsPerPage]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 min-h-[500px]">
@@ -110,6 +132,11 @@ const RechargeHistory = () => {
             <input
               type="text"
               placeholder="Search"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
@@ -127,7 +154,10 @@ const RechargeHistory = () => {
         {tabs.map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab);
+              setCurrentPage(1);
+            }}
             className={`px-4 py-3 whitespace-nowrap font-medium transition-colors border-b-2 ${activeTab === tab
                 ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -142,7 +172,8 @@ const RechargeHistory = () => {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-gray-200 text-sm text-gray-500 uppercase tracking-wider bg-gray-50">
-              <th className="py-3 px-4 font-medium rounded-tl-lg">Purchase Date</th>
+              <th className="py-3 px-4 font-medium rounded-tl-lg whitespace-nowrap">Sr. No.</th>
+              <th className="py-3 px-4 font-medium">Purchase Date</th>
               <th className="py-3 px-4 font-medium">Description</th>
               <th className="py-3 px-4 font-medium">Credit Rate</th>
               <th className="py-3 px-4 font-medium">Credits</th>
@@ -151,12 +182,17 @@ const RechargeHistory = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredHistory.map((record) => (
-              <tr key={record._id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-4 px-4 text-sm text-gray-500">{new Date(record.date).toLocaleDateString()}</td>
+            {paginatedHistory.map((record, index) => (
+              <tr key={record._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                <td className="py-4 px-4 text-sm text-gray-400 font-medium whitespace-nowrap">
+                  {(currentPage - 1) * itemsPerPage + index + 1}
+                </td>
+                <td className="py-4 px-4 text-sm text-gray-500 whitespace-nowrap">
+                  {new Date(record.date).toLocaleDateString()}
+                </td>
                 <td className="py-4 px-4 font-medium text-gray-900">{record.description}</td>
-                <td className="py-4 px-4 text-sm text-gray-500">₹{record.credits?.rate}</td>
-                <td className="py-4 px-4 font-medium text-[var(--color-primary)]">{record.credits?.added}</td>
+                <td className="py-4 px-4 text-sm text-gray-500">₹{record.credits?.rate ?? 1}</td>
+                <td className="py-4 px-4 font-medium text-[var(--color-primary)]">{record.credits?.added || 0}</td>
                 <td className="py-4 px-4 font-medium text-gray-900">₹{record.totalPrice}</td>
                 <td className="py-4 px-4">
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${record.status === 'Completed' ? 'bg-[var(--color-status-completed)] text-[var(--color-status-completed-text)]' :
@@ -170,11 +206,25 @@ const RechargeHistory = () => {
             ))}
             {filteredHistory.length === 0 && (
               <tr>
-                <td colSpan="6" className="text-center py-8 text-gray-500">No transactions found.</td>
+                <td colSpan="7" className="text-center py-8 text-gray-500">
+                  {history.length === 0 ? 'No transactions found.' : 'No transactions match the selected filter.'}
+                </td>
               </tr>
             )}
           </tbody>
         </table>
+
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredHistory.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={(page) => setCurrentPage(page)}
+          onItemsPerPageChange={(val) => {
+            setItemsPerPage(val);
+            setCurrentPage(1);
+          }}
+          label="transactions"
+        />
       </div>
 
       <RequestCreditModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />

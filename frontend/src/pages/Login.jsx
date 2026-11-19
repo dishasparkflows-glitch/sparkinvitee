@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -12,7 +12,7 @@ const Login = () => {
     setError('');
     
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/login`, formData);
+      const res = await api.post('/auth/login', formData);
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       navigate('/dashboard');

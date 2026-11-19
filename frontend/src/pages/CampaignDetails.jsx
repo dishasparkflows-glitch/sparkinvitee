@@ -25,9 +25,10 @@ import {
   Edit2,
   AlertTriangle
 } from 'lucide-react';
-import axios from 'axios';
+import api from '../services/api';
 import Dropdown from '../components/Dropdown';
 import ConfirmationModal from '../components/ConfirmationModal';
+import { toast } from '../utils/toast';
 
 const CampaignDetails = () => {
   const { id } = useParams();
@@ -54,11 +55,12 @@ const CampaignDetails = () => {
       isDestructive: false,
       onConfirm: async () => {
         try {
-          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/pause`);
+          await api.put(`/campaigns/${id}/pause`);
           fetchCampaign();
+          toast.success('Campaign paused successfully');
         } catch (err) {
           console.error(err);
-          alert('Error pausing campaign');
+          toast.error(err.response?.data?.message || 'Error pausing campaign');
         }
       }
     });
@@ -72,11 +74,12 @@ const CampaignDetails = () => {
       isDestructive: false,
       onConfirm: async () => {
         try {
-          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/resume`);
+          await api.put(`/campaigns/${id}/resume`);
           fetchCampaign();
+          toast.success('Campaign resumed successfully');
         } catch (err) {
           console.error(err);
-          alert('Error resuming campaign');
+          toast.error(err.response?.data?.message || 'Error resuming campaign');
         }
       }
     });
@@ -90,11 +93,12 @@ const CampaignDetails = () => {
       isDestructive: true,
       onConfirm: async () => {
         try {
-          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/cancel`);
+          await api.put(`/campaigns/${id}/cancel`);
           fetchCampaign();
+          toast.success('Campaign cancelled successfully');
         } catch (err) {
           console.error(err);
-          alert('Error cancelling campaign');
+          toast.error(err.response?.data?.message || 'Error cancelling campaign');
         }
       }
     });
@@ -105,8 +109,8 @@ const CampaignDetails = () => {
   const itemsPerPage = 10;
 
   const fetchCampaign = useCallback(() => {
-    axios
-      .get(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`)
+    api
+      .get(`/campaigns/${id}`)
       .then((res) => {
         if (res.data?.status === 'Drafted') {
           navigate(`/campaigns/edit/${id}`, { replace: true });
@@ -159,13 +163,14 @@ const CampaignDetails = () => {
 
     try {
       setIsRetryingAll(true);
-      await axios.post(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/retry`);
+      await api.post(`/campaigns/${id}/retry`);
       fetchCampaign();
+      toast.success('Retrying failed invitations');
     } catch (err) {
       console.error('Error retrying all failed recipients:', err);
       setIsRetryingAll(false);
       const msg = err.response?.data?.message || 'Error retrying failed invitations';
-      alert(msg);
+      toast.error(msg);
     }
   };
 
@@ -183,12 +188,13 @@ const CampaignDetails = () => {
 
     try {
       setRetryingContactIds((prev) => new Set([...prev, contact._id]));
-      await axios.post(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/retry/${contact._id}`);
+      await api.post(`/campaigns/${id}/retry/${contact._id}`);
       fetchCampaign();
+      toast.success('Retrying invitation');
     } catch (err) {
       console.error('Error retrying recipient:', err);
       const msg = err.response?.data?.message || 'Error retrying invitation';
-      alert(msg);
+      toast.error(msg);
     } finally {
       setRetryingContactIds((prev) => {
         const next = new Set(prev);
@@ -208,8 +214,8 @@ const CampaignDetails = () => {
 
     try {
       setIsSavingNumber(true);
-      await axios.put(
-        `${import.meta.env.VITE_API_URL}/api/campaigns/${id}/contacts/${editingContact._id}/number`,
+      await api.put(
+        `/campaigns/${id}/contacts/${editingContact._id}/number`,
         { number: cleanNum }
       );
       const updatedContact = { ...editingContact, number: cleanNum, delivery: { ...editingContact.delivery, invalid: false, failureReason: null } };
@@ -292,7 +298,7 @@ const CampaignDetails = () => {
     if (!filteredContacts || filteredContacts.length === 0) return;
 
     const headers = [
-      'Id',
+      'Sr. No.',
       'Name',
       'Number',
       'Status',
@@ -867,8 +873,8 @@ const CampaignDetails = () => {
                   <table className="w-full text-left text-xs whitespace-nowrap">
                     <thead>
                       <tr className="border-b border-gray-100">
-                        <th className="py-4 px-6 font-semibold text-gray-800">
-                          I'd
+                        <th className="py-4 px-6 font-semibold text-gray-800 whitespace-nowrap">
+                          Sr. No.
                         </th>
                         <th className="py-4 px-6 font-semibold text-gray-800">
                           Name
@@ -909,18 +915,8 @@ const CampaignDetails = () => {
                             key={idx}
                             className="border-b border-gray-50 hover:bg-gray-50/50"
                           >
-                            <td className="py-3.5 px-6">
-                              <div className="flex items-center gap-2 text-gray-500">
-                                {failed ? (
-                                  <X
-                                    size={10}
-                                    className="text-red-500 font-bold"
-                                  />
-                                ) : (
-                                  <Send size={10} className="text-gray-400" />
-                                )}
-                                #{absoluteIdx}
-                              </div>
+                            <td className="py-3.5 px-6 text-gray-500 font-medium whitespace-nowrap">
+                              {absoluteIdx}
                             </td>
                             <td className="py-3.5 px-6 text-gray-600">
                               {c.name || '-'}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Pagination from '../components/Pagination';
 import DateSelection from '../components/DateSelection';
+import api from '../services/api';
 
 const CreditsHistory = () => {
   const [history, setHistory] = useState([]);
@@ -10,11 +11,9 @@ const CreditsHistory = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   
   useEffect(() => {
-    import('axios').then(axios => {
-      axios.default.get(`${import.meta.env.VITE_API_URL}/api/transactions/history`)
-        .then(res => setHistory(res.data))
-        .catch(err => console.error('Error fetching transactions:', err));
-    });
+    api.get('/transactions/history')
+      .then(res => setHistory(res.data))
+      .catch(err => console.error('Error fetching transactions:', err));
   }, []);
 
   const filteredHistory = history.filter(record => {

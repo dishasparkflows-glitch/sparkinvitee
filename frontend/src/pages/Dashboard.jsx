@@ -1,14 +1,14 @@
 import { Users, LayoutTemplate, Wallet, TrendingUp } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    axios.get(`${import.meta.env.VITE_API_URL}/api/dashboard/stats`)
+    api.get('/dashboard/stats')
       .then(res => setData(res.data))
       .catch(err => console.error(err));
   }, []);

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, CloudOff, Phone, Search, Edit, Plus, X, Eye, Trash2 } from 'lucide-react';
-import axios from 'axios';
+import api from '../services/api';
 import ConfirmationModal from '../components/ConfirmationModal';
 import CustomerFormModal from '../components/CustomerFormModal';
+import { toast } from '../utils/toast';
 
 const CustomerDetails = () => {
   const { id } = useParams();
@@ -25,7 +26,7 @@ const CustomerDetails = () => {
   const tabs = ['All', 'Drafted', 'Scheduled', 'In-Process', 'Completed', 'Partially Failed', 'Failed', 'Cancelled'];
 
   const fetchCustomerData = useCallback(() => {
-    axios.get(`${import.meta.env.VITE_API_URL}/api/customers/${id}`)
+    api.get(`/customers/${id}`)
       .then(res => {
         setCustomer(res.data);
         setStatus(res.data.whatsapp?.status || 'Disconnected');
@@ -34,7 +35,7 @@ const CustomerDetails = () => {
   }, [id]);
 
   const fetchCustomerCampaigns = useCallback(() => {
-    axios.get(`${import.meta.env.VITE_API_URL}/api/campaigns/customer/${id}`)
+    api.get(`/campaigns/customer/${id}`)
       .then(res => setCampaigns(res.data))
       .catch(err => console.error('Error fetching campaigns:', err));
   }, [id]);
@@ -51,14 +52,14 @@ const CustomerDetails = () => {
   const handleDeleteCampaign = async () => {
     if (!deleteCampaignId) return;
     try {
-      await axios.delete(`${import.meta.env.VITE_API_URL}/api/campaigns/${deleteCampaignId}`);
+      await api.delete(`/campaigns/${deleteCampaignId}`);
       setCampaigns(campaigns.filter(c => c._id !== deleteCampaignId));
+      toast.success('Campaign deleted successfully');
     } catch (err) {
       console.error(err);
-      alert('Error deleting campaign');
+      toast.error(err.response?.data?.message || 'Error deleting campaign');
     }
     setDeleteCampaignId(null);
-    setOpenMenuId(null);
   };
 
   // ... (keeping existing polling and disconnect logic)
@@ -67,7 +68,7 @@ const CustomerDetails = () => {
     if (polling) {
       interval = setInterval(async () => {
         try {
-          const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/whatsapp/status/${id}`);
+          const res = await api.get(`/whatsapp/status/${id}`);
           setStatus(res.data.status);
           if (res.data.qr) setQrCode(res.data.qr);
           if (res.data.status === 'CONNECTED' || res.data.status === 'Connected') {
@@ -90,7 +91,7 @@ const CustomerDetails = () => {
     setStatus('INITIALIZING');
     setPolling(true);
     try {
-      await axios.post(`${import.meta.env.VITE_API_URL}/api/whatsapp/initiate/${id}`, { provider: provider || 'wwebjs' });
+      await api.post(`/whatsapp/initiate/${id}`, { provider: provider || 'wwebjs' });
     } catch (err) {
       console.error(err);
       setStatus('Disconnected');
@@ -100,7 +101,7 @@ const CustomerDetails = () => {
 
   const handleDisconnect = async () => {
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/whatsapp/disconnect/${id}`);
+      const res = await api.post(`/whatsapp/disconnect/${id}`);
       setStatus('Disconnected');
       setQrCode(null);
       setPolling(false);

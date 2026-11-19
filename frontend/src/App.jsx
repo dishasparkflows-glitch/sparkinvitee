@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import AuthLayout from './components/AuthLayout';
+import { ToastContainer } from './components/Toast';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import Customers from './pages/Customers';
@@ -12,6 +13,7 @@ import Dashboard from './pages/Dashboard';
 function App() {
   return (
     <Router>
+      <ToastContainer />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         

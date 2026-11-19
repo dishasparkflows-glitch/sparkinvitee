@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Eye, Trash2, Edit, Pause, Play, Ban } from 'lucide-react';
-import axios from 'axios';
+import api from '../services/api';
 import Pagination from '../components/Pagination';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Dropdown from '../components/Dropdown';
 import DateSelection from '../components/DateSelection';
+import { toast } from '../utils/toast';
 
 const TABS = ['All', 'Completed', 'Drafted', 'Scheduled', 'In-Process', 'Paused', 'Partially Failed', 'Failed', 'Cancelled'];
 
@@ -32,7 +33,7 @@ const AllCampaigns = () => {
   }, []);
 
   const fetchCampaigns = () => {
-    axios.get(`${import.meta.env.VITE_API_URL}/api/campaigns`)
+    api.get('/campaigns')
       .then(res => setCampaigns(res.data))
       .catch(err => console.error('Error fetching campaigns:', err));
   };
@@ -68,11 +69,12 @@ const AllCampaigns = () => {
       isDestructive: true,
       onConfirm: async () => {
         try {
-          await axios.delete(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`);
+          await api.delete(`/campaigns/${id}`);
           setCampaigns(campaigns.filter(c => c._id !== id));
+          toast.success('Campaign deleted successfully');
         } catch (err) {
           console.error(err);
-          alert('Error deleting campaign');
+          toast.error(err.response?.data?.message || 'Error deleting campaign');
         }
       }
     });
@@ -86,11 +88,12 @@ const AllCampaigns = () => {
       isDestructive: true,
       onConfirm: async () => {
         try {
-          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/cancel`);
+          await api.put(`/campaigns/${id}/cancel`);
           fetchCampaigns();
+          toast.success('Campaign cancelled successfully');
         } catch (err) {
           console.error(err);
-          alert('Error cancelling campaign');
+          toast.error(err.response?.data?.message || 'Error cancelling campaign');
         }
       }
     });
@@ -104,11 +107,12 @@ const AllCampaigns = () => {
       isDestructive: false,
       onConfirm: async () => {
         try {
-          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/pause`);
+          await api.put(`/campaigns/${id}/pause`);
           fetchCampaigns();
+          toast.success('Campaign paused successfully');
         } catch (err) {
           console.error(err);
-          alert('Error pausing campaign');
+          toast.error(err.response?.data?.message || 'Error pausing campaign');
         }
       }
     });
@@ -122,11 +126,12 @@ const AllCampaigns = () => {
       isDestructive: false,
       onConfirm: async () => {
         try {
-          await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}/resume`);
+          await api.put(`/campaigns/${id}/resume`);
           fetchCampaigns();
+          toast.success('Campaign resumed successfully');
         } catch (err) {
           console.error(err);
-          alert('Error resuming campaign');
+          toast.error(err.response?.data?.message || 'Error resuming campaign');
         }
       }
     });

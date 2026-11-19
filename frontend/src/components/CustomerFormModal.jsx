@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import axios from 'axios';
+import api from '../services/api';
 
 const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
   const [formData, setFormData] = useState({ name: '', email: '', mobile: '', address: '' });
@@ -41,11 +41,11 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
 
       if (initialData && initialData._id) {
         // Edit mode
-        await axios.put(`${import.meta.env.VITE_API_URL}/api/customers/${initialData._id}`, payload);
+        await api.put(`/customers/${initialData._id}`, payload);
         onSave();
       } else {
         // Add mode
-        await axios.post(`${import.meta.env.VITE_API_URL}/api/customers`, payload);
+        await api.post('/customers', payload);
         onSave();
       }
       onClose();

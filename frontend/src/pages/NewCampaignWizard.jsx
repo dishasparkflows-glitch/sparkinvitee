@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Check, ArrowLeft, X, FileText, Info, FolderOpen, Loader2, Users, MessageSquare, Paperclip, Clock, Eye, ExternalLink } from 'lucide-react';
-import axios from 'axios';
+import api from '../services/api';
 import * as XLSX from 'xlsx';
 import Dropdown from '../components/Dropdown';
 import PdfPreviewCanvas from '../components/PdfPreviewCanvas';
 import PdfDocThumbnail from '../components/PdfDocThumbnail';
+import { toast } from '../utils/toast';
 
 const steps = [
   { id: 1, title: 'Campaigns Type', subtitle: 'Choose a Method to Send the Campaign' },
@@ -76,7 +77,7 @@ const NewCampaignWizard = () => {
 
   useEffect(() => {
     if (isEditing) {
-      axios.get(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`)
+      api.get(`/campaigns/${id}`)
         .then(res => {
           const campaign = res.data;
           setCampaignData(prev => ({
@@ -159,7 +160,7 @@ const NewCampaignWizard = () => {
   };
 
   useEffect(() => {
-    axios.get(`${import.meta.env.VITE_API_URL}/api/customers/lookup`)
+    api.get('/customers/lookup')
       .then(res => {
         setCustomers(res.data);
         if (!isEditing && !preselectedCustomer && res.data.length > 0) {
@@ -250,7 +251,7 @@ const NewCampaignWizard = () => {
         const formData = new FormData();
         formData.append('file', campaignData.file);
         formData.append('customerId', campaignData.customerId);
-        const uploadRes = await axios.post(`${import.meta.env.VITE_API_URL}/api/campaigns/upload-file`, formData);
+        const uploadRes = await api.post('/campaigns/upload-file', formData);
         fileUrl = uploadRes.data.fileUrl; // R2 key stored in DB
       }
 
@@ -271,14 +272,16 @@ const NewCampaignWizard = () => {
       };
 
       if (isEditing) {
-        await axios.put(`${import.meta.env.VITE_API_URL}/api/campaigns/${id}`, payload);
+        await api.put(`/campaigns/${id}`, payload);
+        toast.success('Campaign updated successfully');
       } else {
-        await axios.post(`${import.meta.env.VITE_API_URL}/api/campaigns`, payload);
+        await api.post('/campaigns', payload);
+        toast.success('Campaign created successfully');
       }
       navigate('/campaigns');
     } catch (err) {
       console.error('Error saving campaign:', err);
-      alert('Failed to save campaign');
+      toast.error(err.response?.data?.message || 'Failed to save campaign');
       setIsSubmitting(false);
     }
   };

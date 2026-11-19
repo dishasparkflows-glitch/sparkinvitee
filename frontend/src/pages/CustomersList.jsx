@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Eye, Edit, Trash2 } from 'lucide-react';
-import axios from 'axios';
+import api from '../services/api';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Pagination from '../components/Pagination';
 import CustomerFormModal from '../components/CustomerFormModal';
+import { toast } from '../utils/toast';
 
 const CustomersList = () => {
   const navigate = useNavigate();
@@ -21,7 +22,7 @@ const CustomersList = () => {
   }, []);
 
   const fetchCustomers = () => {
-    axios.get(`${import.meta.env.VITE_API_URL}/api/customers`)
+    api.get('/customers')
       .then(res => setCustomers(res.data))
       .catch(err => console.error(err));
   };
@@ -38,13 +39,13 @@ const CustomersList = () => {
     const id = deleteConfirm.id;
     if (!id) return;
     try {
-      await axios.delete(`${import.meta.env.VITE_API_URL}/api/customers/${id}`);
+      await api.delete(`/customers/${id}`);
       setCustomers(customers.filter(c => c._id !== id));
+      toast.success('Customer deleted successfully');
     } catch (err) {
       console.error(err);
-      alert('Error deleting customer');
+      toast.error(err.response?.data?.message || 'Error deleting customer');
     }
-    setOpenMenuId(null);
   };
 
   const formatDate = (dateString) => {
