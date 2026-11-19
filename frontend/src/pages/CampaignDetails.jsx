@@ -455,20 +455,20 @@ const CampaignDetails = () => {
               </h3>
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-full bg-[#e6e6fa] text-[#483d8b] flex items-center justify-center font-bold text-sm">
-                  {getInitials(customer.name)}
+                  {getInitials(customer.profile?.name)}
                 </div>
                 <div className="text-sm font-medium text-gray-700">
-                  {customer.name || 'Unknown'}
+                  {customer.profile?.name}
                 </div>
               </div>
               <div className="text-xs text-[#483d8b] mb-1.5 font-medium">
                 Contact Info
               </div>
               <div className="text-[11px] text-gray-500 mb-1">
-                Email: {customer.email || '-'}
+                Email: {customer.profile?.email || '-'}
               </div>
               <div className="text-[11px] text-gray-500">
-                Mobile: {customer.mobile || '-'}
+                Mobile: {customer.profile?.mobile || '-'}
               </div>
             </div>
 

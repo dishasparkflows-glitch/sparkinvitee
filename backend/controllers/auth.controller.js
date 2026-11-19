@@ -17,8 +17,8 @@ export const login = async (req, res) => {
     // 3. Generate Token
     const token = jwt.sign(
       { id: user._id, email: user.email }, 
-      process.env.JWT_SECRET || 'secret', 
-      { expiresIn: '1d' }
+      process.env.JWT_SECRET, 
+      { expiresIn: process.env.JWT_EXPIRES_IN }
     );
     
     res.json({
@@ -47,7 +47,7 @@ export const forgotPassword = async (req, res) => {
     }
     
     // Generate reset token (in a real app, save to DB and send email)
-    const resetToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '15m' });
+    const resetToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
     
     // Mocking email sending for now
     console.log(`[MOCK EMAIL] Password reset link for ${email}: http://localhost:5173/reset-password?token=${resetToken}`);

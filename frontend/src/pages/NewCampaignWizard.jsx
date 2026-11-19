@@ -299,7 +299,7 @@ const NewCampaignWizard = () => {
   // Helper for the Review step
   const getCustomerName = () => {
     const cust = customers.find(c => c._id === campaignData.customerId);
-    return cust?.name || 'Unknown';
+    return cust?.profile?.name || '';
   };
 
   return (
@@ -383,7 +383,7 @@ const NewCampaignWizard = () => {
                   <Dropdown 
                     value={campaignData.customerId}
                     onChange={(val) => { setCampaignData({...campaignData, customerId: val}); setValidationErrors(prev => ({...prev, customerId: undefined})); }}
-                    options={customers.map(c => ({ value: c._id, label: c.name }))}
+                    options={customers.map(c => ({ value: c._id, label: c.profile?.name }))}
                     placeholder="Select a customer..."
                   />
                   {validationErrors.customerId && (

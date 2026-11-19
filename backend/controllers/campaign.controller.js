@@ -10,7 +10,7 @@ import { getPresignedDownloadUrl, uploadBufferToR2, deleteMedia } from '../servi
 export const getAllCampaigns = async (req, res) => {
   try {
     // Populate customerId to get the Customer's name + WhatsApp number for the list
-    const campaigns = await Campaign.find().populate('customerId', 'name whatsapp').sort({ createdAt: -1 });
+    const campaigns = await Campaign.find().populate('customerId', 'profile whatsapp').sort({ createdAt: -1 });
     res.json(campaigns);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching campaigns', error: error.message });

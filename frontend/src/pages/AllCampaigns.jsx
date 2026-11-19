@@ -38,8 +38,9 @@ const AllCampaigns = () => {
   const customerOptions = useMemo(() => {
     const map = new Map();
     campaigns.forEach(c => {
-      if (c.customerId?._id && c.customerId?.name) {
-        map.set(c.customerId._id, c.customerId.name);
+      const custName = c.customerId?.profile?.name;
+      if (c.customerId?._id && custName) {
+        map.set(c.customerId._id, custName);
       }
     });
     return [
@@ -148,7 +149,7 @@ const AllCampaigns = () => {
   const filteredCampaigns = campaigns.filter(c => {
     const matchesTab = activeTab === 'All' || c.status === activeTab;
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (c.customerId?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (c.customerId?.profile?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                           c.type.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCustomer = customerFilter === 'All' || c.customerId?._id === customerFilter;
 
@@ -314,7 +315,7 @@ const AllCampaigns = () => {
                   </td>
                   <td className="py-4 px-4">
                     <div className="font-medium text-[var(--color-primary)]">{c.name}</div>
-                    <div className="text-xs text-gray-500">{c.customerId?.name || '-'}</div>
+                    <div className="text-xs text-gray-500">{c.customerId?.profile?.name || '-'}</div>
                   </td>
                   <td className="py-4 px-4 text-sm">{c.type}</td>
 

@@ -82,9 +82,12 @@ const CustomersList = () => {
 
   const filteredCustomers = customers.filter(c => {
     const searchLower = searchQuery.toLowerCase();
-    return (c.name || '').toLowerCase().includes(searchLower) ||
-           (c.mobile || '').toLowerCase().includes(searchLower) ||
-           (c.email || '').toLowerCase().includes(searchLower);
+    const name = c.profile?.name || '';
+    const mobile = c.profile?.mobile || '';
+    const email = c.profile?.email || '';
+    return name.toLowerCase().includes(searchLower) ||
+           mobile.toLowerCase().includes(searchLower) ||
+           email.toLowerCase().includes(searchLower);
   });
 
   return (
@@ -142,10 +145,10 @@ const CustomersList = () => {
                   {(currentPage - 1) * itemsPerPage + index + 1}
                 </td>
                 <td className="py-4 px-4 text-gray-500 font-medium text-sm">
-                  {c.name}
+                  {c.profile?.name}
                 </td>
                 <td className="py-4 px-4 text-sm text-gray-500 font-medium">
-                  {c.mobile || '-'}
+                  {c.profile?.mobile || '-'}
                 </td>
                 <td className="py-4 px-4 text-sm text-gray-500 font-medium">
                   {c.campaignsCount?.toString().padStart(2, '0') || '00'}
@@ -165,7 +168,7 @@ const CustomersList = () => {
                       </span>
                     )}
                     <span className="text-xs text-gray-500 font-medium px-1">
-                      {c.whatsapp?.mobileNo || c.mobile || '-'}
+                      {c.whatsapp?.mobileNo || c.profile?.mobile || '-'}
                     </span>
                   </div>
                 </td>

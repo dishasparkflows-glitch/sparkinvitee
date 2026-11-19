@@ -152,7 +152,8 @@ const CustomerDetails = () => {
     return matchesTab && matchesSearch;
   });
   
-  const initials = customer.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const customerName = customer.profile?.name || '';
+  const initials = customerName ? customerName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'CU';
 
   return (
     <div className="flex flex-col gap-6">
@@ -182,18 +183,18 @@ const CustomerDetails = () => {
               <div className="w-12 h-12 rounded-full bg-indigo-100 text-[#4c3963] flex items-center justify-center font-bold text-lg">
                 {initials}
               </div>
-              <div className="font-semibold text-gray-700">{customer.name}</div>
+              <div className="font-semibold text-gray-700">{customer.profile?.name}</div>
             </div>
             
             <div className="space-y-4 mb-6">
               <div>
                 <div className="text-sm font-semibold text-[#4c3963] mb-1">Contact Info</div>
-                <div className="text-xs text-gray-500 font-medium">Email: {customer.email || '-'}</div>
-                <div className="text-xs text-gray-500 font-medium">Mobile: {customer.mobile || '-'}</div>
+                <div className="text-xs text-gray-500 font-medium">Email: {customer.profile?.email || '-'}</div>
+                <div className="text-xs text-gray-500 font-medium">Mobile: {customer.profile?.mobile || '-'}</div>
               </div>
               <div>
                 <div className="text-sm font-semibold text-[#4c3963] mb-1">Address Info</div>
-                <div className="text-xs text-gray-500 font-medium">{customer.address || '-'}</div>
+                <div className="text-xs text-gray-500 font-medium">{customer.profile?.address || '-'}</div>
               </div>
             </div>
 

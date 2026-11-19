@@ -24,15 +24,11 @@ export const getAllCustomers = async (req, res) => {
 
 export const createCustomer = async (req, res) => {
   try {
-    const { name, email, mobile, address, userId } = req.body;
+    const { profile, userId } = req.body;
     
     const customer = new Customer({
-      userId: userId || '60d5ecb8b392d700153ee123', // hardcoded mock for now
-      name,
-      email,
-      mobile,
-      address,
-      whatsapp: { status: 'Disconnected' }
+      userId: userId || req.userId,
+      profile
     });
     
     await customer.save();

@@ -10,10 +10,10 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
   useEffect(() => {
     if (initialData) {
       setFormData({
-        name: initialData.name || '',
-        email: initialData.email || '',
-        mobile: initialData.mobile || '',
-        address: initialData.address || ''
+        name: initialData.profile?.name || '',
+        email: initialData.profile?.email || '',
+        mobile: initialData.profile?.mobile || '',
+        address: initialData.profile?.address || ''
       });
     } else {
       setFormData({ name: '', email: '', mobile: '', address: '' });
@@ -28,13 +28,24 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
     setIsSubmitting(true);
     setError(null);
     try {
+      const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const payload = {
+        userId: storedUser.id || storedUser._id,
+        profile: {
+          name: formData.name,
+          email: formData.email,
+          mobile: formData.mobile,
+          address: formData.address
+        }
+      };
+
       if (initialData && initialData._id) {
         // Edit mode
-        const res = await axios.put(`${import.meta.env.VITE_API_URL}/api/customers/${initialData._id}`, formData);
+        const res = await axios.put(`${import.meta.env.VITE_API_URL}/api/customers/${initialData._id}`, payload);
         onSave(res.data, 'edit');
       } else {
         // Add mode
-        const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/customers`, formData);
+        const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/customers`, payload);
         onSave(res.data, 'add');
       }
       onClose();

@@ -20,10 +20,12 @@ const seedDatabase = async () => {
     // Create Customers
     const customer1 = await Customer.create({
       userId: '60d5ecb8b392d700153ee123',
-      name: 'Acme Corp',
-      email: 'contact@acmecorp.com',
-      mobile: '9876543210',
-      address: '123 Business Rd',
+      profile: {
+        name: 'Acme Corp',
+        email: 'contact@acmecorp.com',
+        mobile: '9876543210',
+        address: '123 Business Rd'
+      },
       whatsapp: {
         status: 'Connected',
         mobileNo: '9876543210',
@@ -33,10 +35,12 @@ const seedDatabase = async () => {
 
     const customer2 = await Customer.create({
       userId: '60d5ecb8b392d700153ee123',
-      name: 'TechFlow Inc',
-      email: 'hello@techflow.io',
-      mobile: '5551234567',
-      address: '456 Startup Blvd',
+      profile: {
+        name: 'TechFlow Inc',
+        email: 'hello@techflow.io',
+        mobile: '5551234567',
+        address: '456 Startup Blvd'
+      },
       whatsapp: {
         status: 'Disconnected',
         mobileNo: '5551234567'
@@ -45,10 +49,12 @@ const seedDatabase = async () => {
 
     const customer3 = await Customer.create({
       userId: '60d5ecb8b392d700153ee123',
-      name: 'Global Reach LLC',
-      email: 'sales@globalreach.com',
-      mobile: '1112223333',
-      address: '789 Enterprise Way',
+      profile: {
+        name: 'Global Reach LLC',
+        email: 'sales@globalreach.com',
+        mobile: '1112223333',
+        address: '789 Enterprise Way'
+      },
       whatsapp: {
         status: 'Connected',
         mobileNo: '1112223333',
