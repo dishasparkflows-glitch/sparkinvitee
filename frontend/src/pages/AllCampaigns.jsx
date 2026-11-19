@@ -5,6 +5,7 @@ import axios from 'axios';
 import Pagination from '../components/Pagination';
 import ConfirmationModal from '../components/ConfirmationModal';
 import Dropdown from '../components/Dropdown';
+import DateSelection from '../components/DateSelection';
 
 const AllCampaigns = () => {
   const navigate = useNavigate();
@@ -215,32 +216,16 @@ const AllCampaigns = () => {
             placeholder="Filter by Customer"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Calendar size={16} className="text-gray-400" />
-          <input 
-            type="date"
-            value={dateFrom}
-            onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-[var(--color-primary)]"
-            placeholder="From"
-          />
-          <span className="text-gray-400 text-sm">to</span>
-          <input 
-            type="date"
-            value={dateTo}
-            onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-[var(--color-primary)]"
-            placeholder="To"
-          />
-          {(dateFrom || dateTo) && (
-            <button 
-              onClick={() => { setDateFrom(''); setDateTo(''); setCurrentPage(1); }}
-              className="text-xs text-red-500 hover:text-red-700 font-medium"
-            >
-              Clear
-            </button>
-          )}
-        </div>
+        <DateSelection
+          startDate={dateFrom}
+          endDate={dateTo}
+          onChange={({ startDate, endDate }) => {
+            setDateFrom(startDate);
+            setDateTo(endDate);
+            setCurrentPage(1);
+          }}
+          placeholder="Filter by Date"
+        />
       </div>
 
       {/* Tabs with Counts */}
@@ -280,7 +265,7 @@ const AllCampaigns = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-gray-200 text-sm text-gray-500 uppercase tracking-wider">
-                <th className="py-3 px-4 font-medium w-12">#</th>
+                <th className="py-3 px-4 font-medium whitespace-nowrap">Sr. No.</th>
                 <th className="py-3 px-4 font-medium">Campaign & Customer Name</th>
                 <th className="py-3 px-4 font-medium">Type</th>
                 <th className="py-3 px-4 font-medium text-center">Progress</th>
@@ -401,7 +386,7 @@ const AllCampaigns = () => {
                       <div className="group relative">
                         <button 
                           onClick={() => handleDelete(c._id)} 
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
                         >
                           <Trash2 size={18} />
                         </button>

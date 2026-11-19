@@ -160,7 +160,7 @@ const NewCampaignWizard = () => {
   };
 
   useEffect(() => {
-    axios.get(`${import.meta.env.VITE_API_URL}/api/customers`)
+    axios.get(`${import.meta.env.VITE_API_URL}/api/customers/lookup`)
       .then(res => {
         setCustomers(res.data);
         if (!isEditing && !preselectedCustomer && res.data.length > 0) {
@@ -562,8 +562,14 @@ const NewCampaignWizard = () => {
 
                 {/* Manual Import Modal */}
                 {manualImportModalOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 max-w-2xl w-full flex flex-col relative animate-fade-in-up">
+                  <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+                    onClick={() => setManualImportModalOpen(false)}
+                  >
+                    <div 
+                      className="bg-white rounded-xl shadow-2xl p-6 max-w-2xl w-full flex flex-col relative animate-fade-in-up"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
                         <h3 className="text-lg font-bold text-[#4c3963]">Manual Import</h3>
                         <button onClick={() => setManualImportModalOpen(false)} className="text-gray-400 hover:text-gray-700 bg-gray-100 rounded-full p-1">

@@ -1,21 +1,15 @@
 import { getPresignedUploadUrl } from '../services/r2.service.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 export const getUploadUrl = async (req, res) => {
     try {
         const customerid = req.body.customerId;
         const uploadType = req.body.uploadType || 'misc';
         const fileType = req.body.fileType || 'application/octet-stream';
-        // No file type restrictions — allow any file
 
         const timestamp = Date.now();
         
-        let keyPath = '';
-        if (customerid) {
-            keyPath += `customers/${customerid}`;
-        } else {
-            keyPath += `system`;
-        }
-
+        let keyPath = customerid ? `customers/${customerid}` : `system`;
         keyPath += `/${uploadType}`;
         
         // Derive extension from mime type if possible, otherwise from filename
@@ -31,17 +25,13 @@ export const getUploadUrl = async (req, res) => {
 
         const { uploadUrl, publicUrl } = await getPresignedUploadUrl(key, fileType);
         
-        res.json({
-            success: true,
-            message: 'Upload URL generated',
-            data: {
-                uploadUrl,
-                publicUrl,
-                key
-            }
-        });
+        return ApiResponse.success(res, {
+            uploadUrl,
+            publicUrl,
+            key
+        }, 'Upload URL generated');
     } catch (error) {
         console.error('Error in getUploadUrl:', error);
-        res.status(500).json({ message: 'Error generating upload URL', error: error.message });
+        return ApiResponse.error(res, error.message);
     }
 };

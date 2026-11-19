@@ -6,6 +6,7 @@ import Campaign from '../models/Campaign.js';
 import path from 'path';
 import * as baileysService from '../services/baileys.service.js';
 import { handleMessageCreate, handleMessageAck } from '../services/whatsappHandlers.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 // In-memory store for active clients
 const sessions = new Map();
@@ -32,7 +33,7 @@ export const initiateSession = async (req, res) => {
 
   try {
     const customer = await Customer.findById(customerId);
-    if (!customer) return res.status(404).json({ message: 'Customer not found' });
+    if (!customer) return ApiResponse.error(res, 'Customer not found', 404);
 
     const provider = req.body.provider || customer.whatsapp?.provider || 'wwebjs';
     const isBaileysEnabled = process.env.BAILEYS_ENABLED === 'true';
@@ -42,7 +43,7 @@ export const initiateSession = async (req, res) => {
         await Customer.findByIdAndUpdate(customerId, { 'whatsapp.provider': 'baileys' });
       }
       const response = await baileysService.startBaileysSession(customerId);
-      return res.json(response);
+      return ApiResponse.success(res, response);
     }
 
     if (customer.whatsapp?.provider !== 'wwebjs') {
@@ -52,7 +53,7 @@ export const initiateSession = async (req, res) => {
     if (sessions.has(customerId)) {
       const existingClient = sessions.get(customerId);
       if (existingClient.status === 'CONNECTED' || existingClient.status === 'QR_READY') {
-        return res.json({ message: 'Session is already active or waiting for QR', status: existingClient.status });
+        return ApiResponse.success(res, { status: existingClient.status }, 'Session is already active or waiting for QR');
       }
       try {
         await existingClient.client.destroy();
@@ -141,10 +142,10 @@ export const initiateSession = async (req, res) => {
       console.error(`Puppeteer initialization error for ${customerId}:`, err);
       sessions.delete(customerId);
     });
-    res.json({ message: 'Session initialization started. Poll for status.', status: 'INITIALIZING' });
+    return ApiResponse.success(res, { status: 'INITIALIZING' }, 'Session initialization started. Poll for status.');
   } catch (error) {
     console.error('Error initiating WhatsApp session:', error);
-    res.status(500).json({ message: 'Server error' });
+    return ApiResponse.error(res, 'Server error', 500);
   }
 };
 
@@ -153,26 +154,26 @@ export const getSessionStatus = async (req, res) => {
 
   try {
     const customer = await Customer.findById(customerId);
-    if (!customer) return res.status(404).json({ message: 'Customer not found' });
+    if (!customer) return ApiResponse.error(res, 'Customer not found', 404);
 
     if (customer.whatsapp?.provider === 'baileys' && process.env.BAILEYS_ENABLED === 'true') {
       const status = await baileysService.getBaileysStatus(customerId);
-      return res.json(status);
+      return ApiResponse.success(res, status);
     }
 
     const session = sessions.get(customerId);
 
     if (!session) {
-      return res.json({ status: 'DISCONNECTED', dbStatus: customer.whatsapp.status });
+      return ApiResponse.success(res, { status: 'DISCONNECTED', dbStatus: customer.whatsapp.status });
     }
 
-    res.json({
+    return ApiResponse.success(res, {
       status: session.status,
       qr: session.qr,
       dbStatus: customer.whatsapp.status
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    return ApiResponse.error(res, 'Server error', 500);
   }
 };
 
@@ -183,7 +184,7 @@ export const disconnectSession = async (req, res) => {
     const customer = await Customer.findById(customerId);
     if (customer?.whatsapp?.provider === 'baileys') {
       const response = await baileysService.disconnectBaileysSession(customerId);
-      return res.json(response);
+      return ApiResponse.success(res, response);
     }
 
     const session = sessions.get(customerId);
@@ -202,9 +203,9 @@ export const disconnectSession = async (req, res) => {
       'whatsapp.status': 'Disconnected'
     });
 
-    res.json({ message: 'Session disconnected successfully' });
+    return ApiResponse.success(res, null, 'Session disconnected successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    return ApiResponse.error(res, 'Server error', 500);
   }
 };
 

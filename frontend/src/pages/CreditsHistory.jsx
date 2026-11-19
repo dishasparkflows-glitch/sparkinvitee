@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import Pagination from '../components/Pagination';
-// import { DateRangePicker } from 'react-date-range'; // Not installed, using native for mock
-// import 'react-date-range/dist/styles.css';
-// import 'react-date-range/dist/theme/default.css';
+import DateSelection from '../components/DateSelection';
 
 const CreditsHistory = () => {
   const [history, setHistory] = useState([]);
@@ -47,8 +45,8 @@ const CreditsHistory = () => {
       const row = [
         `"${new Date(record.date).toLocaleString()}"`,
         `"${(record.description || '').replace(/"/g, '""')}"`,
-        `"${record.creditsAdded > 0 ? '+' + record.creditsAdded : '--'}"`,
-        `"${record.creditsDeducted > 0 ? '-' + record.creditsDeducted : '--'}"`,
+        `"${record.credits?.added > 0 ? '+' + record.credits.added : '--'}"`,
+        `"${record.credits?.deducted > 0 ? '-' + record.credits.deducted : '--'}"`,
         `"${record.balanceAfter}"`
       ];
       csvRows.push(row.join(','));
@@ -72,33 +70,17 @@ const CreditsHistory = () => {
         <h1 className="text-2xl font-bold">Credits History</h1>
         
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center border border-gray-300 rounded-md bg-white overflow-hidden focus-within:border-[var(--color-primary)] focus-within:ring-1 focus-within:ring-[var(--color-primary)]">
-              <input 
-                type="date" 
-                value={startDate} 
-                onChange={(e) => setStartDate(e.target.value)} 
-                className="px-3 py-2 text-sm text-gray-700 outline-none"
-                title="Start Date"
-              />
-              <span className="text-gray-400 font-medium">to</span>
-              <input 
-                type="date" 
-                value={endDate} 
-                onChange={(e) => setEndDate(e.target.value)} 
-                className="px-3 py-2 text-sm text-gray-700 outline-none"
-                title="End Date"
-              />
-            </div>
-            {(startDate || endDate) && (
-              <button 
-                onClick={() => { setStartDate(''); setEndDate(''); }} 
-                className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+          <DateSelection
+            startDate={startDate}
+            endDate={endDate}
+            onChange={({ startDate: s, endDate: e }) => {
+              setStartDate(s);
+              setEndDate(e);
+              setCurrentPage(1);
+            }}
+            placeholder="Filter by Date"
+            align="right"
+          />
           <button 
             onClick={handleExport}
             className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-md hover:bg-opacity-90"
@@ -112,7 +94,7 @@ const CreditsHistory = () => {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-gray-200 text-sm text-gray-500 uppercase tracking-wider bg-gray-50">
-              <th className="py-3 px-4 font-medium rounded-tl-lg w-12">#</th>
+              <th className="py-3 px-4 font-medium rounded-tl-lg whitespace-nowrap">Sr. No.</th>
               <th className="py-3 px-4 font-medium">Date</th>
               <th className="py-3 px-4 font-medium">Description</th>
               <th className="py-3 px-4 font-medium text-right text-green-600">Debited (+)</th>
@@ -131,10 +113,10 @@ const CreditsHistory = () => {
                 <td className="py-4 px-4 text-sm text-gray-500">{new Date(record.date).toLocaleString()}</td>
                 <td className="py-4 px-4 font-medium text-gray-900">{record.description}</td>
                 <td className="py-4 px-4 text-right font-medium text-green-600">
-                  {record.creditsAdded > 0 ? `+${record.creditsAdded}` : '--'}
+                  {record.credits?.added > 0 ? `+${record.credits.added}` : '--'}
                 </td>
                 <td className="py-4 px-4 text-right font-medium text-red-600">
-                  {record.creditsDeducted > 0 ? `-${record.creditsDeducted}` : '--'}
+                  {record.credits?.deducted > 0 ? `-${record.credits.deducted}` : '--'}
                 </td>
                 <td className="py-4 px-4 text-right font-medium text-gray-900">{record.balanceAfter}</td>
               </tr>

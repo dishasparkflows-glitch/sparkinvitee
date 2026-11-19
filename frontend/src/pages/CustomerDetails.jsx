@@ -54,11 +54,8 @@ const CustomerDetails = () => {
       .catch(err => console.error('Error fetching campaigns:', err));
   };
 
-  const handleSaveCustomer = (updatedCustomer) => {
-    setCustomer(updatedCustomer);
-    if (updatedCustomer.whatsapp?.status) {
-      setStatus(updatedCustomer.whatsapp.status);
-    }
+  const handleSaveCustomer = () => {
+    fetchCustomerData();
   };
   
   const handleDeleteCampaign = async () => {
@@ -384,7 +381,7 @@ const CustomerDetails = () => {
                             e.stopPropagation();
                             setDeleteCampaignId(c._id);
                           }}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
                           title="Delete"
                         >
                           <Trash2 size={18} />
@@ -412,8 +409,14 @@ const CustomerDetails = () => {
 
       {/* WhatsApp QR Modal Pop-up */}
       {(status === 'INITIALIZING' || (status === 'QR_READY' && qrCode)) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center relative animate-fade-in-up">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => { setStatus('Disconnected'); setPolling(false); }}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center relative animate-fade-in-up"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button 
               onClick={() => { setStatus('Disconnected'); setPolling(false); }}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-colors"
@@ -448,8 +451,14 @@ const CustomerDetails = () => {
 
       {/* Provider Selection Modal */}
       {showProviderModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center relative animate-fade-in-up">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setShowProviderModal(false)}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center relative animate-fade-in-up"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button 
               onClick={() => setShowProviderModal(false)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-colors"

@@ -6,30 +6,31 @@ import path from 'path';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { sendMessage } from './whatsapp.controller.js';
 import { getPresignedDownloadUrl, uploadBufferToR2, deleteMedia } from '../services/r2.service.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 export const getAllCampaigns = async (req, res) => {
   try {
     // Populate customerId to get the Customer's name + WhatsApp number for the list
     const campaigns = await Campaign.find().populate('customerId', 'profile whatsapp').sort({ createdAt: -1 });
-    res.json(campaigns);
+    return ApiResponse.success(res, campaigns, 'Campaigns fetched successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching campaigns', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const getCampaignsByCustomerId = async (req, res) => {
   try {
     const campaigns = await Campaign.find({ customerId: req.params.customerId }).sort({ createdAt: -1 });
-    res.json(campaigns);
+    return ApiResponse.success(res, campaigns, 'Customer campaigns fetched successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching customer campaigns', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const getCampaignById = async (req, res) => {
   try {
     const campaign = await Campaign.findById(req.params.id).populate('customerId').lean();
-    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!campaign) return ApiResponse.error(res, 'Campaign not found', 404);
 
     if (campaign.fileUrl && !campaign.fileUrl.startsWith('http')) {
       try {
@@ -59,16 +60,16 @@ export const getCampaignById = async (req, res) => {
       });
     }
 
-    res.json(campaign);
+    return ApiResponse.success(res, campaign);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching campaign', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const deleteCampaign = async (req, res) => {
   try {
     const campaign = await Campaign.findByIdAndDelete(req.params.id);
-    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!campaign) return ApiResponse.error(res, 'Campaign not found', 404);
 
     // Delete associated file from Cloudflare R2 if it exists
     if (campaign.fileUrl) {
@@ -81,46 +82,46 @@ export const deleteCampaign = async (req, res) => {
       }
     }
 
-    res.json({ message: 'Campaign deleted successfully' });
+    return ApiResponse.success(res, null, 'Campaign deleted successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting campaign', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const pauseCampaign = async (req, res) => {
   try {
     const campaign = await Campaign.findById(req.params.id);
-    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!campaign) return ApiResponse.error(res, 'Campaign not found', 404);
     if (campaign.status !== 'In-Process') {
-      return res.status(400).json({ message: 'Only in-process campaigns can be paused' });
+      return ApiResponse.error(res, 'Only in-process campaigns can be paused', 400);
     }
-    const updated = await Campaign.findByIdAndUpdate(req.params.id, { status: 'Paused' }, { returnDocument: 'after' });
-    res.json(updated);
+    await Campaign.findByIdAndUpdate(req.params.id, { status: 'Paused' }, { returnDocument: 'after' });
+    return ApiResponse.success(res, null, 'Campaign paused successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error pausing campaign', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const resumeCampaign = async (req, res) => {
   try {
     const campaign = await Campaign.findById(req.params.id);
-    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!campaign) return ApiResponse.error(res, 'Campaign not found', 404);
     if (campaign.status !== 'Paused') {
-      return res.status(400).json({ message: 'Only paused campaigns can be resumed' });
+      return ApiResponse.error(res, 'Only paused campaigns can be resumed', 400);
     }
     const updated = await Campaign.findByIdAndUpdate(req.params.id, { status: 'In-Process' }, { returnDocument: 'after' });
     // Re-trigger background processor — it will skip already-sent contacts
     processCampaign(updated._id, updated).catch(err => console.error('Campaign resume error:', err));
-    res.json(updated);
+    return ApiResponse.success(res, null, 'Campaign resumed successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error resuming campaign', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const cancelCampaign = async (req, res) => {
   try {
     const oldCampaign = await Campaign.findById(req.params.id);
-    if (!oldCampaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!oldCampaign) return ApiResponse.error(res, 'Campaign not found', 404);
     
     const wasInProcess = oldCampaign.status === 'In-Process' || oldCampaign.status === 'Paused';
     const campaign = await Campaign.findByIdAndUpdate(req.params.id, { status: 'Cancelled' }, { returnDocument: 'after' });
@@ -139,17 +140,20 @@ export const cancelCampaign = async (req, res) => {
              userId: user._id,
              type: 'Refund',
              description: `Refund for cancelled campaign: ${campaign.name}`,
-             creditsAdded: creditsToRefund,
-             creditsDeducted: 0,
+             credits: {
+               added: creditsToRefund,
+               deducted: 0,
+               rate: 1
+             },
              balanceAfter: user.credits.available
            });
          }
        }
     }
     
-    res.json({ ...campaign.toObject(), note: 'Remaining messages have been cancelled. Already-sent messages were not recalled.' });
+    return ApiResponse.success(res, null, 'Campaign cancelled successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error cancelling campaign', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -198,8 +202,11 @@ export const createCampaign = async (req, res) => {
           userId: user._id,
           type: 'Usage',
           description: `Campaign Created: ${campaign.name}`,
-          creditsAdded: 0,
-          creditsDeducted: campaign.stats.creditsUsed,
+          credits: {
+            added: 0,
+            deducted: campaign.stats.creditsUsed,
+            rate: 1
+          },
           balanceAfter: user.credits.available
         });
       }
@@ -210,10 +217,10 @@ export const createCampaign = async (req, res) => {
       processCampaign(campaign._id, campaign).catch(err => console.error('Campaign process error:', err));
     }
     
-    res.status(201).json(campaign);
+    return ApiResponse.created(res, null, 'Campaign created successfully');
   } catch (error) {
     console.error('Error creating campaign:', error);
-    res.status(500).json({ message: 'Error creating campaign', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -234,17 +241,17 @@ export const updateCampaign = async (req, res) => {
     };
 
     const campaign = await Campaign.findByIdAndUpdate(req.params.id, campaignData, { returnDocument: 'after' });
-    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!campaign) return ApiResponse.error(res, 'Campaign not found', 404);
     
     // If status is 'In-Process', trigger the background processor
     if (campaign.status === 'In-Process') {
       processCampaign(campaign._id, campaign).catch(err => console.error('Campaign process error:', err));
     }
     
-    res.json(campaign);
+    return ApiResponse.success(res, null, 'Campaign updated successfully');
   } catch (error) {
     console.error('Error updating campaign:', error);
-    res.status(500).json({ message: 'Error updating campaign', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -498,8 +505,11 @@ export const processCampaign = async (campaignId, campaignData) => {
           userId: user._id,
           type: 'Refund',
           description: `Refund for unsent/failed messages in: ${updatedCampaign.name}`,
-          creditsAdded: creditsToRefund,
-          creditsDeducted: 0,
+          credits: {
+            added: creditsToRefund,
+            deducted: 0,
+            rate: 1
+          },
           balanceAfter: user.credits.available
         });
       }
@@ -513,7 +523,7 @@ export const processCampaign = async (campaignId, campaignData) => {
 export const uploadFile = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
+      return ApiResponse.error(res, 'No file uploaded', 400);
     }
     
     const { customerId } = req.body;
@@ -525,10 +535,10 @@ export const uploadFile = async (req, res) => {
     const publicUrl = await uploadBufferToR2(req.file.buffer, key, req.file.mimetype);
     
     console.log(`[R2] File uploaded: ${key}`);
-    res.json({ fileUrl: key, publicUrl, originalName: req.file.originalname });
+    return ApiResponse.success(res, { fileUrl: key, publicUrl, originalName: req.file.originalname }, 'File uploaded successfully');
   } catch (error) {
     console.error('Error uploading file to R2:', error);
-    res.status(500).json({ message: 'Error uploading file', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -538,12 +548,13 @@ export const retryFailedRecipients = async (req, res) => {
 
   try {
     const campaign = await Campaign.findById(id).populate('customerId');
-    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!campaign) return ApiResponse.error(res, 'Campaign not found', 404);
 
     // Rule: If WhatsApp is disconnected, ask the user to reconnect before retrying.
     const customer = campaign.customerId;
     if (!customer || customer.whatsapp?.status !== 'Connected') {
       return res.status(400).json({
+        success: false,
         message: 'WhatsApp is disconnected. Please reconnect before retrying.',
         code: 'WHATSAPP_DISCONNECTED'
       });
@@ -567,7 +578,7 @@ export const retryFailedRecipients = async (req, res) => {
     });
 
     if (eligibleContacts.length === 0) {
-      return res.status(400).json({ message: 'No eligible failed recipients found to retry' });
+      return ApiResponse.error(res, 'No eligible failed recipients found to retry', 400);
     }
 
     // Rule: If the number is invalid, require correction first.
@@ -576,6 +587,7 @@ export const retryFailedRecipients = async (req, res) => {
       const cleanNum = singleContact.number ? singleContact.number.toString().replace(/\D/g, '') : '';
       if (!cleanNum || cleanNum.length < 10) {
         return res.status(400).json({
+          success: false,
           message: 'Phone number is invalid. Please correct the phone number before retrying.',
           code: 'INVALID_NUMBER',
           contactId: singleContact._id
@@ -603,13 +615,12 @@ export const retryFailedRecipients = async (req, res) => {
       console.error('Error during executeRetryProcess:', err);
     });
 
-    res.json({
-      message: `Queued ${eligibleContacts.length} failed recipient(s) for retry`,
+    return ApiResponse.success(res, {
       queuedCount: eligibleContacts.length
-    });
+    }, `Queued ${eligibleContacts.length} failed recipient(s) for retry`);
   } catch (error) {
     console.error('Error in retryFailedRecipients:', error);
-    res.status(500).json({ message: 'Error retrying failed recipients', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -805,12 +816,12 @@ export const updateRecipientNumber = async (req, res) => {
   const { number } = req.body;
 
   if (!number) {
-    return res.status(400).json({ message: 'Phone number is required' });
+    return ApiResponse.error(res, 'Phone number is required', 400);
   }
 
   const cleanNum = number.toString().replace(/\D/g, '');
   if (cleanNum.length < 10) {
-    return res.status(400).json({ message: 'Phone number must have at least 10 digits' });
+    return ApiResponse.error(res, 'Phone number must have at least 10 digits', 400);
   }
 
   try {
@@ -828,13 +839,12 @@ export const updateRecipientNumber = async (req, res) => {
     );
 
     if (!campaign) {
-      return res.status(404).json({ message: 'Campaign or contact not found' });
+      return ApiResponse.error(res, 'Campaign or contact not found', 404);
     }
 
-    const updatedContact = campaign.contacts.find(c => c._id.toString() === contactId);
-    res.json({ message: 'Phone number updated successfully', contact: updatedContact });
+    return ApiResponse.success(res, null, 'Phone number updated successfully');
   } catch (error) {
     console.error('Error updating recipient number:', error);
-    res.status(500).json({ message: 'Error updating recipient number', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };

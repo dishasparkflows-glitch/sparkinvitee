@@ -41,12 +41,12 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
 
       if (initialData && initialData._id) {
         // Edit mode
-        const res = await axios.put(`${import.meta.env.VITE_API_URL}/api/customers/${initialData._id}`, payload);
-        onSave(res.data, 'edit');
+        await axios.put(`${import.meta.env.VITE_API_URL}/api/customers/${initialData._id}`, payload);
+        onSave();
       } else {
         // Add mode
-        const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/customers`, payload);
-        onSave(res.data, 'add');
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/customers`, payload);
+        onSave();
       }
       onClose();
     } catch (err) {
@@ -58,8 +58,14 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up">
+    <div 
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100">
           <h2 className="text-xl font-bold text-[#4c3963]">
             {initialData ? 'Edit Customer' : 'Add Customer'}

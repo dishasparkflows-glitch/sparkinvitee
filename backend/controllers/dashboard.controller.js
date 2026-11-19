@@ -1,7 +1,7 @@
 import Customer from '../models/Customer.js';
 import Campaign from '../models/Campaign.js';
 import User from '../models/User.js';
-import Transaction from '../models/Transaction.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 export const getOverviewStats = async (req, res) => {
   try {
@@ -28,13 +28,13 @@ export const getOverviewStats = async (req, res) => {
 
     const latestCampaigns = await Campaign.find().sort({ createdAt: -1 }).limit(5);
     const recentActivity = latestCampaigns.map(c => ({
-        id: c._id,
-        title: `Campaign '${c.name}' ${c.status.toLowerCase()}`,
-        description: c.type,
-        date: c.createdAt
+      id: c._id,
+      title: `Campaign '${c.name}' ${c.status.toLowerCase()}`,
+      description: c.type,
+      date: c.createdAt
     }));
 
-    res.json({
+    return ApiResponse.success(res, {
       stats: {
         totalCustomers,
         activeCampaigns,
@@ -46,8 +46,8 @@ export const getOverviewStats = async (req, res) => {
         title: t.title,
         time: new Date(t.date).toLocaleDateString()
       }))
-    });
+    }, 'Dashboard stats fetched successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching stats', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };

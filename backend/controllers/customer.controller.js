@@ -1,5 +1,6 @@
 import Customer from '../models/Customer.js';
 import Campaign from '../models/Campaign.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 export const getAllCustomers = async (req, res) => {
   try {
@@ -16,9 +17,21 @@ export const getAllCustomers = async (req, res) => {
       campaignsCount: countsMap[c._id.toString()] || 0
     }));
     
-    res.json(populated);
+    return ApiResponse.success(res, populated, 'Customers fetched successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching customers', error: error.message });
+    return ApiResponse.error(res, error.message);
+  }
+};
+
+export const getCustomerLookup = async (req, res) => {
+  try {
+    const customers = await Customer.find()
+      .select('_id profile.name')
+      .sort({ 'profile.name': 1 })
+      .lean();
+    return ApiResponse.success(res, customers, 'Customer lookup fetched successfully');
+  } catch (error) {
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -32,19 +45,19 @@ export const createCustomer = async (req, res) => {
     });
     
     await customer.save();
-    res.status(201).json(customer);
+    return ApiResponse.created(res, null, 'Customer created successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error creating customer', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const getCustomerById = async (req, res) => {
   try {
     const customer = await Customer.findById(req.params.id);
-    if (!customer) return res.status(404).json({ message: 'Customer not found' });
-    res.json(customer);
+    if (!customer) return ApiResponse.error(res, 'Customer not found', 404);
+    return ApiResponse.success(res, customer, 'Customer fetched successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching customer', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -55,19 +68,19 @@ export const updateCustomer = async (req, res) => {
       req.body, 
       { returnDocument: 'after', runValidators: true }
     );
-    if (!customer) return res.status(404).json({ message: 'Customer not found' });
-    res.json(customer);
+    if (!customer) return ApiResponse.error(res, 'Customer not found', 404);
+    return ApiResponse.success(res, null, 'Customer updated successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error updating customer', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const deleteCustomer = async (req, res) => {
   try {
     const customer = await Customer.findByIdAndDelete(req.params.id);
-    if (!customer) return res.status(404).json({ message: 'Customer not found' });
-    res.json({ message: 'Customer deleted successfully' });
+    if (!customer) return ApiResponse.error(res, 'Customer not found', 404);
+    return ApiResponse.success(res, null, 'Customer deleted successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting customer', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };

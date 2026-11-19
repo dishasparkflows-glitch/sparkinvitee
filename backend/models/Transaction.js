@@ -6,11 +6,13 @@ const transactionSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   description: { type: String, required: true },
   
-  creditsAdded: { type: Number, default: 0 },
-  creditsDeducted: { type: Number, default: 0 },
+  credits: {
+    added: { type: Number, default: 0 },
+    deducted: { type: Number, default: 0 },
+    rate: { type: Number, default: 1 }
+  },
   
   // Specific to Purchase/Request flow
-  creditRate: { type: Number },
   totalPrice: { type: Number },
   status: { type: String, enum: ['Requested', 'Completed', 'Rejected'], default: 'Completed' },
   

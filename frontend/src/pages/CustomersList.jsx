@@ -38,12 +38,8 @@ const CustomersList = () => {
       .catch(err => console.error(err));
   };
 
-  const handleSaveCustomer = (customerData, mode) => {
-    if (mode === 'add') {
-      setCustomers([customerData, ...customers]);
-    } else {
-      setCustomers(customers.map(c => c._id === customerData._id ? { ...customerData, campaignsCount: c.campaignsCount } : c));
-    }
+  const handleSaveCustomer = () => {
+    fetchCustomers();
   };
 
   const handleDelete = (id) => {
@@ -123,7 +119,7 @@ const CustomersList = () => {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-gray-200 text-sm text-[#4c3963] font-semibold tracking-wider">
-              <th className="py-4 px-4 font-semibold w-12">#</th>
+              <th className="py-4 px-4 font-semibold whitespace-nowrap">Sr. No.</th>
               <th className="py-4 px-4 font-semibold">Name</th>
               <th className="py-4 px-4 font-semibold">Contact Number</th>
               <th className="py-4 px-4 font-semibold">Campaigns</th>
@@ -200,7 +196,7 @@ const CustomersList = () => {
                         e.stopPropagation();
                         handleDelete(c._id);
                       }} 
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
+                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors" 
                       title="Delete"
                     >
                       <Trash2 size={18} />

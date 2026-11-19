@@ -1,8 +1,10 @@
 import { Users, LayoutTemplate, Wallet, TrendingUp } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -14,10 +16,38 @@ const Dashboard = () => {
   if (!data) return <div>Loading...</div>;
 
   const stats = [
-    { title: 'Total Customers', value: data.stats.totalCustomers, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { title: 'Active Campaigns', value: data.stats.activeCampaigns, icon: LayoutTemplate, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { title: 'Credits Available', value: data.stats.creditsAvailable, icon: Wallet, color: 'text-green-600', bg: 'bg-green-50' },
-    { title: 'Conversion Rate', value: data.stats.conversionRate, icon: TrendingUp, color: 'text-orange-600', bg: 'bg-orange-50' },
+    { 
+      title: 'Total Customers', 
+      value: data.stats.totalCustomers, 
+      icon: Users, 
+      color: 'text-blue-600', 
+      bg: 'bg-blue-50',
+      path: '/customers'
+    },
+    { 
+      title: 'Active Campaigns', 
+      value: data.stats.activeCampaigns, 
+      icon: LayoutTemplate, 
+      color: 'text-purple-600', 
+      bg: 'bg-purple-50',
+      path: '/campaigns'
+    },
+    { 
+      title: 'Credits Available', 
+      value: data.stats.creditsAvailable, 
+      icon: Wallet, 
+      color: 'text-green-600', 
+      bg: 'bg-green-50',
+      path: '/credits-history'
+    },
+    { 
+      title: 'Conversion Rate', 
+      value: data.stats.conversionRate, 
+      icon: TrendingUp, 
+      color: 'text-orange-600', 
+      bg: 'bg-orange-50',
+      path: '/campaigns'
+    },
   ];
 
   return (
@@ -31,8 +61,16 @@ const Dashboard = () => {
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.title} className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stat.bg} ${stat.color}`}>
+            <div 
+              key={stat.title} 
+              onClick={() => stat.path && navigate(stat.path)}
+              className={`bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex items-center gap-4 transition-all duration-200 ${
+                stat.path 
+                  ? 'cursor-pointer hover:shadow-md hover:border-gray-200 hover:-translate-y-0.5' 
+                  : ''
+              }`}
+            >
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${stat.bg} ${stat.color}`}>
                 <Icon size={24} />
               </div>
               <div>

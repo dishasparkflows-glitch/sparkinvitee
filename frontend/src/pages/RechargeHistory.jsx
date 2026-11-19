@@ -24,8 +24,14 @@ const RequestCreditModal = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-[500px] overflow-hidden">
+    <div 
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-lg shadow-xl w-[500px] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold mb-2">Request Credits</h2>
           <p className="text-sm text-gray-500">You will need to request a Spark Invitee to proceed with a new credit purchase.</p>
@@ -149,8 +155,8 @@ const RechargeHistory = () => {
               <tr key={record._id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-4 px-4 text-sm text-gray-500">{new Date(record.date).toLocaleDateString()}</td>
                 <td className="py-4 px-4 font-medium text-gray-900">{record.description}</td>
-                <td className="py-4 px-4 text-sm text-gray-500">₹{record.creditRate}</td>
-                <td className="py-4 px-4 font-medium text-[var(--color-primary)]">{record.creditsAdded}</td>
+                <td className="py-4 px-4 text-sm text-gray-500">₹{record.credits?.rate}</td>
+                <td className="py-4 px-4 font-medium text-[var(--color-primary)]">{record.credits?.added}</td>
                 <td className="py-4 px-4 font-medium text-gray-900">₹{record.totalPrice}</td>
                 <td className="py-4 px-4">
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${record.status === 'Completed' ? 'bg-[var(--color-status-completed)] text-[var(--color-status-completed-text)]' :

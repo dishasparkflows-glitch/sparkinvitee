@@ -1,45 +1,53 @@
 import Transaction from '../models/Transaction.js';
 import User from '../models/User.js';
+import ApiResponse from '../utils/ApiResponse.js';
 
 export const getHistory = async (req, res) => {
   try {
     const transactions = await Transaction.find().sort({ date: -1 });
-    res.json(transactions);
+    return ApiResponse.success(res, transactions, 'Transactions fetched successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching transactions', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
 export const requestCredit = async (req, res) => {
   try {
-    const { description, creditsRequested } = req.body;
+    const { description, creditsRequested, userId: bodyUserId } = req.body;
     
-    // Mock user for now
-    const userId = '60d5ecb8b392d700153ee123';
+    // User from body, auth middleware, or fallback to first user
+    let userId = bodyUserId || req.userId;
+    if (!userId) {
+      const defaultUser = await User.findOne();
+      userId = defaultUser ? defaultUser._id : null;
+    }
     
-    // Mock fetching credit rate from settings (e.g. 1 INR per credit)
+    // Credit rate from settings (e.g. 1 INR per credit)
     const creditRate = 1;
     const totalPrice = creditsRequested * creditRate;
 
     // Get current balance
-    const user = await User.findById(userId);
+    const user = userId ? await User.findById(userId) : null;
     const balanceAfter = user ? user.credits.available : 0;
 
     const transaction = new Transaction({
       userId,
       type: 'Request',
       description,
-      creditsAdded: creditsRequested,
-      creditRate,
+      credits: {
+        added: creditsRequested,
+        deducted: 0,
+        rate: creditRate
+      },
       totalPrice,
       status: 'Requested',
       balanceAfter
     });
 
     await transaction.save();
-    res.status(201).json(transaction);
+    return ApiResponse.created(res, null, 'Credit requested successfully');
   } catch (error) {
-    res.status(500).json({ message: 'Error creating credit request', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
 
@@ -50,7 +58,7 @@ export const mockApproveCredit = async (req, res) => {
     
     const transaction = await Transaction.findById(id);
     if (!transaction || transaction.type !== 'Request' || transaction.status !== 'Requested') {
-      return res.status(400).json({ message: 'Invalid transaction to approve' });
+      return ApiResponse.error(res, 'Invalid transaction to approve', 400);
     }
 
     transaction.status = 'Completed';
@@ -58,28 +66,31 @@ export const mockApproveCredit = async (req, res) => {
     // Update the User's balance
     const user = await User.findById(transaction.userId);
     if (user) {
-      user.credits.available += transaction.creditsAdded;
+      user.credits.available += transaction.credits.added;
       await user.save();
     }
     
     // The transaction's balanceAfter should reflect the newly updated balance
     transaction.balanceAfter = user ? user.credits.available : transaction.balanceAfter;
     
-    // Let's also create a 'Purchase' transaction record since the request was approved
+    // Also create a 'Purchase' transaction record since the request was approved
     if (user) {
       await Transaction.create({
         userId: user._id,
         type: 'Purchase',
-        description: `Credits Purchased: ${transaction.creditsAdded}`,
-        creditsAdded: transaction.creditsAdded,
-        creditsDeducted: 0,
+        description: `Credits Purchased: ${transaction.credits.added}`,
+        credits: {
+          added: transaction.credits.added,
+          deducted: 0,
+          rate: transaction.credits.rate
+        },
         balanceAfter: user.credits.available
       });
     }
     
     await transaction.save();
-    res.json({ message: 'Credit request approved', transaction });
+    return ApiResponse.success(res, null, 'Credit request approved');
   } catch (error) {
-    res.status(500).json({ message: 'Error approving credit', error: error.message });
+    return ApiResponse.error(res, error.message);
   }
 };
