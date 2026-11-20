@@ -37,12 +37,12 @@ const Sidebar = () => {
 
   return (
     <div className="w-64 h-full bg-[var(--color-primary)] text-white flex flex-col">
-      <div className="p-6 flex items-center gap-3">
+      <div className="h-14 px-6 flex items-center gap-3 border-b border-white/10 shrink-0">
         {/* Placeholder for SparkInvitee Logo */}
-        <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center">
+        <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center shrink-0">
           <span className="text-[var(--color-primary)] font-bold text-xl">S</span>
         </div>
-        <span className="font-bold text-xl tracking-wider">SPARKINVITEE</span>
+        <span className="font-bold text-lg tracking-wider">SPARKINVITEE</span>
       </div>
       
       <nav className="flex-1 px-4 py-6 space-y-2">

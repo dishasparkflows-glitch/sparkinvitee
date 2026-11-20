@@ -15,14 +15,14 @@ const Topbar = () => {
   }, []);
 
   return (
-    <header className="h-20 bg-white shadow-sm flex items-center justify-between px-8">
+    <header className="h-14 bg-white border-b border-gray-100 flex items-center justify-between px-6 shrink-0 shadow-2xs">
       <div>
         {/* Page title logic can be injected here later via context or generic based on route */}
       </div>
       <div className="flex items-center gap-4">
-        <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center font-bold relative">
+        <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center font-bold text-xs relative cursor-pointer shadow-2xs hover:opacity-95 transition-opacity" title="User Profile">
           {initials}
-          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+          <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
         </div>
       </div>
     </header>

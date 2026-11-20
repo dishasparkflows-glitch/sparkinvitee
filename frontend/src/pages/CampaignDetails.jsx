@@ -12,6 +12,7 @@ import {
   Send,
   CheckCircle2,
   Eye,
+  Check,
   XCircle,
   AlertCircle,
   CalendarDays,
@@ -23,7 +24,8 @@ import {
   Ban,
   RotateCcw,
   Edit2,
-  AlertTriangle
+  AlertTriangle,
+  Megaphone
 } from 'lucide-react';
 import api from '../services/api';
 import Dropdown from '../components/Dropdown';
@@ -39,6 +41,7 @@ const CampaignDetails = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [modal, setModal] = useState({ open: false, title: '', message: '', onConfirm: null, isDestructive: true, confirmText: 'Confirm' });
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
 
   // Retry and edit state
   const [isRetryingAll, setIsRetryingAll] = useState(false);
@@ -142,6 +145,17 @@ const CampaignDetails = () => {
 
     return () => clearInterval(interval);
   }, [campaign, isRetryingAll, fetchCampaign]);
+
+  // Escape key closes preview modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && previewModalOpen) {
+        setPreviewModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewModalOpen]);
 
   const checkWhatsAppConnected = () => {
     const customer = campaign?.customerId;
@@ -282,6 +296,77 @@ const CampaignDetails = () => {
     hours = hours % 12;
     hours = hours ? hours : 12;
     return `${day}/${month}/${year}, ${hours.toString().padStart(2, '0')}:${minutes}${ampm.toLowerCase()}`;
+  };
+
+  const formatHeaderDate = (dateString) => {
+    if (!dateString) return '--';
+    const date = new Date(dateString);
+    const day = date.getDate().toString().padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${day} ${month} ${year}, ${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'Completed':
+        return {
+          bg: 'bg-[#eafaf1]',
+          text: 'text-[#16a34a]',
+          dot: 'bg-[#16a34a]',
+          label: 'Completed'
+        };
+      case 'Failed':
+      case 'Partially Failed':
+        return {
+          bg: 'bg-[#fddddd]',
+          text: 'text-[#d93c42]',
+          dot: 'bg-[#f35055]',
+          label: status
+        };
+      case 'In-Process':
+      case 'Sending':
+        return {
+          bg: 'bg-[#dbeafe]',
+          text: 'text-[#2563eb]',
+          dot: 'bg-[#2563eb]',
+          label: 'In-Process'
+        };
+      case 'Scheduled':
+        return {
+          bg: 'bg-[#f3efff]',
+          text: 'text-[#7c3aed]',
+          dot: 'bg-[#7c3aed]',
+          label: 'Scheduled'
+        };
+      case 'Paused':
+        return {
+          bg: 'bg-[#fef3c7]',
+          text: 'text-[#b45309]',
+          dot: 'bg-[#d97706]',
+          label: 'Paused'
+        };
+      case 'Drafted':
+        return {
+          bg: 'bg-[#f1f5f9]',
+          text: 'text-[#475569]',
+          dot: 'bg-[#64748b]',
+          label: 'Drafted'
+        };
+      default:
+        return {
+          bg: 'bg-[#f1f5f9]',
+          text: 'text-[#475569]',
+          dot: 'bg-[#64748b]',
+          label: status || 'Unknown'
+        };
+    }
   };
 
   const getInitials = (name) => {
@@ -429,310 +514,351 @@ const CampaignDetails = () => {
           </div>
         </div>
       )}
+
+      {/* File Attachment In-App Preview Modal (No new tab) */}
+      {previewModalOpen && campaign?.fileUrl && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setPreviewModalOpen(false)}
+        >
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[#fbfbfe]">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                <span>
+                  {campaign.fileUrl.toLowerCase().endsWith('.pdf') ? 'PDF Preview' : 'Image Preview'}
+                </span>
+                <span className="text-gray-400 font-normal text-xs">({campaign.name})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={campaign.fileUrl}
+                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                  title="Download / Open Full Size"
+                >
+                  <Download size={16} />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalOpen(false)}
+                  className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                  title="Close (Esc)"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center p-4 min-h-[300px] max-h-[calc(90vh-60px)]">
+              {campaign.fileUrl.toLowerCase().endsWith('.pdf') ? (
+                <iframe
+                  src={campaign.fileUrl}
+                  title="PDF Preview"
+                  className="w-full h-[70vh] rounded-lg border border-gray-200 bg-white"
+                />
+              ) : (
+                <img
+                  src={campaign.fileUrl}
+                  alt="Attachment Preview"
+                  className="max-h-[75vh] max-w-full object-contain rounded-lg shadow-sm"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 min-h-[calc(100vh-6rem)] relative">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2 text-gray-600">
+        {/* Top Breadcrumb */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-sm text-gray-500">
             <button
               onClick={() => navigate('/campaigns')}
-              className="hover:text-gray-900 transition-colors"
+              className="hover:text-gray-900 transition-colors flex items-center gap-1.5 font-medium text-gray-600"
             >
-              <ArrowLeft size={18} />
+              <ArrowLeft size={16} />
+              <span>Campaigns</span>
             </button>
-            <span className="font-medium text-[#483d8b]">Campaigns Details</span>
+            <span className="text-gray-300">/</span>
+            <span className="font-bold text-gray-900">Campaign Details</span>
           </div>
           {campaign?.status === 'Drafted' && (
             <button
               onClick={() => navigate(`/campaigns/edit/${id}`)}
-              className="bg-[#4c3963] text-white px-4 py-2 rounded-md font-medium text-sm hover:bg-opacity-90 transition-colors flex items-center gap-2 shadow-sm"
+              className="bg-[#4c3963] text-white px-3.5 py-1.5 rounded-md font-medium text-xs hover:bg-opacity-90 transition-colors flex items-center gap-1.5 shadow-sm"
             >
-              <Edit2 size={16} />
+              <Edit2 size={14} />
               Continue Editing Draft
             </button>
           )}
         </div>
 
-        <div className="flex flex-col xl:flex-row gap-6">
-          {/* Left Column */}
-          <div className="w-full xl:w-1/3 flex flex-col gap-4">
-            {/* Personal Details */}
-            <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-5">
-              <h3 className="text-[#483d8b] font-semibold mb-5 text-sm">
+        {/* Campaign Info Banner Card */}
+        {(() => {
+          const statusBadge = getStatusBadge(campaign?.status);
+          return (
+            <div className="bg-[#f5f1fb] rounded-2xl p-4 sm:p-5 flex items-center justify-between border border-[#ede8f5] mb-6">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-[#e6dcf7] text-[#7c3aed] flex items-center justify-center shrink-0">
+                  <Megaphone size={22} strokeWidth={2.2} />
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-bold text-gray-900">
+                    Campaign: {campaign.name}
+                  </h2>
+                  <div className="text-[11px] sm:text-xs text-gray-500 font-normal mt-0.5 flex items-center flex-wrap gap-y-1">
+                    <span>Created on {formatHeaderDate(campaign.createdAt)}</span>
+                    <span className="mx-2 text-gray-300">|</span>
+                    <span>Updated on {formatHeaderDate(campaign.updatedAt)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${statusBadge.bg} ${statusBadge.text}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
+                  <span>{statusBadge.label}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Top 5 Info Boxes (Moved from sidebar to top row) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+          {/* 1. Personal Details */}
+          <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-4 flex flex-col justify-between">
+            <div>
+              <h3 className="text-[#483d8b] font-semibold mb-3 text-xs uppercase tracking-wider">
                 Personal Details
               </h3>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-full bg-[#e6e6fa] text-[#483d8b] flex items-center justify-center font-bold text-sm">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-9 h-9 rounded-full bg-[#e6e6fa] text-[#483d8b] flex items-center justify-center font-bold text-xs shrink-0">
                   {getInitials(customer.profile?.name)}
                 </div>
-                <div className="text-sm font-medium text-gray-700">
-                  {customer.profile?.name}
+                <div className="text-xs font-semibold text-gray-800 truncate" title={customer.profile?.name}>
+                  {customer.profile?.name || '-'}
                 </div>
               </div>
-              <div className="text-xs text-[#483d8b] mb-1.5 font-medium">
-                Contact Info
+            </div>
+            <div className="border-t border-gray-50 pt-2 space-y-1">
+              <div className="text-[11px] text-gray-500 truncate" title={customer.profile?.email}>
+                <span className="text-gray-400 font-medium">Email:</span> {customer.profile?.email || '-'}
               </div>
-              <div className="text-[11px] text-gray-500 mb-1">
-                Email: {customer.profile?.email || '-'}
-              </div>
-              <div className="text-[11px] text-gray-500">
-                Mobile: {customer.profile?.mobile || '-'}
+              <div className="text-[11px] text-gray-500 truncate" title={customer.profile?.mobile}>
+                <span className="text-gray-400 font-medium">Mobile:</span> {customer.profile?.mobile || '-'}
               </div>
             </div>
+          </div>
 
-            {/* Campaign Details */}
-            <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-5">
-              <h3 className="text-[#483d8b] font-semibold mb-5 text-sm">
+          {/* 2. Campaign Details */}
+          <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-4 flex flex-col justify-between">
+            <div>
+              <h3 className="text-[#483d8b] font-semibold mb-2.5 text-xs uppercase tracking-wider">
                 Campaigns Details
               </h3>
-              <div className="text-xs font-semibold text-[#483d8b] mb-1">
-                Campaigns Name
-              </div>
-              <div className="text-xs text-gray-500 mb-5">{campaign.name}</div>
-
-              <div className="flex gap-4 mb-5">
-                <div className="flex-1 flex gap-3 items-center">
-                  <div className="w-10 h-10 rounded-xl bg-[#f3efff] text-[#8b5cf6] flex items-center justify-center">
-                    <Send size={16} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-[#483d8b] mb-0.5">
-                      Status
-                    </div>
-                    <div className="text-[10px] text-gray-500">
-                      {campaign.status}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex-1 flex gap-3 items-center">
-                  <div className="w-10 h-10 rounded-xl bg-[#f3efff] text-[#8b5cf6] flex items-center justify-center">
-                    <Users size={16} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-[#483d8b] mb-0.5">
-                      Recipient
-                    </div>
-                    <div className="text-[10px] text-gray-500">
-                      {campaign.stats?.totalRecipients ||
-                        campaign.contacts?.length ||
-                        0}
-                    </div>
-                  </div>
+              <div className="mb-2">
+                <div className="text-[10px] text-gray-400 font-medium">Campaign Name</div>
+                <div className="text-xs font-semibold text-gray-800 truncate" title={campaign.name}>
+                  {campaign.name}
                 </div>
               </div>
-
-              <div className="flex gap-4 mb-5">
-                <div className="flex-1">
-                  <div className="text-xs font-semibold text-[#483d8b] mb-1">
-                    Delay From
-                  </div>
-                  <div className="text-[10px] text-gray-500">
-                    {campaign.delayFrom || '-'}
-                  </div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <div className="text-[10px] text-gray-400 font-medium">Delay From</div>
+                  <div className="text-[11px] font-semibold text-gray-700">{campaign.delayFrom || '-'}s</div>
                 </div>
-                <div className="flex-1">
-                  <div className="text-xs font-semibold text-[#483d8b] mb-1">
-                    Delay To
-                  </div>
-                  <div className="text-[10px] text-gray-500">
-                    {campaign.delayTo || '-'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <div className="text-xs font-semibold text-[#483d8b] mb-1">
-                    Created On
-                  </div>
-                  <div className="text-[10px] text-gray-500">
-                    {formatDate(campaign.createdAt)}
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="text-xs font-semibold text-[#483d8b] mb-1">
-                    Updated On
-                  </div>
-                  <div className="text-[10px] text-gray-500">
-                    {formatDate(campaign.updatedAt)}
-                  </div>
+                <div>
+                  <div className="text-[10px] text-gray-400 font-medium">Delay To</div>
+                  <div className="text-[11px] font-semibold text-gray-700">{campaign.delayTo || '-'}s</div>
                 </div>
               </div>
             </div>
+            <div className="border-t border-gray-50 pt-1.5 grid grid-cols-2 gap-1.5 text-[10px] text-gray-500">
+              <div className="truncate" title={formatDate(campaign.createdAt)}>
+                <span className="text-gray-400">Created:</span> {formatDate(campaign.createdAt)}
+              </div>
+              <div className="truncate" title={formatDate(campaign.updatedAt)}>
+                <span className="text-gray-400">Updated:</span> {formatDate(campaign.updatedAt)}
+              </div>
+            </div>
+          </div>
 
-            {/* Schedule Details */}
-            <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-5">
-              <h3 className="text-[#483d8b] font-semibold mb-5 text-sm">
+          {/* 3. Schedule Details */}
+          <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-4 flex flex-col justify-between">
+            <div>
+              <h3 className="text-[#483d8b] font-semibold mb-3 text-xs uppercase tracking-wider">
                 Schedule Details
               </h3>
-              <div className="mb-4">
-                <div className="text-xs font-semibold text-[#483d8b] mb-1.5">
-                  Schedule Date & Time
-                </div>
-                <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <CalendarDays size={12} className="text-[#8b5cf6]" />
-                  {formatDate(campaign.scheduleDateTime)}
+              <div className="mb-2.5">
+                <div className="text-[10px] text-gray-400 font-medium mb-1">Schedule Date & Time</div>
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-700">
+                  <CalendarDays size={13} className="text-[#8b5cf6] shrink-0" />
+                  <span className="truncate">{formatDate(campaign.scheduleDateTime)}</span>
                 </div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-[#483d8b] mb-1.5">
-                  Sent Date & Time
-                </div>
-                <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                  <CalendarDays size={12} className="text-[#8b5cf6]" />
-                  {campaign.status === 'Completed'
-                    ? formatDate(campaign.updatedAt)
-                    : '--'}
+                <div className="text-[10px] text-gray-400 font-medium mb-1">Sent Date & Time</div>
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-700">
+                  <CalendarDays size={13} className="text-[#8b5cf6] shrink-0" />
+                  <span className="truncate">
+                    {campaign.status === 'Completed' ? formatDate(campaign.updatedAt) : '--'}
+                  </span>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Message */}
-            <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-5">
-              <h3 className="text-[#483d8b] font-semibold mb-2 text-sm">
+          {/* 4. Message */}
+          <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-4 flex flex-col justify-between">
+            <div>
+              <h3 className="text-[#483d8b] font-semibold mb-2.5 text-xs uppercase tracking-wider">
                 Message
               </h3>
-              <div className="text-xs font-semibold text-[#483d8b] text-center py-8">
-                {campaign.messageTemplate || 'No massage available'}
+              <div className="text-[11px] text-gray-600 bg-gray-50/80 border border-gray-100 p-2.5 rounded-lg max-h-24 overflow-y-auto leading-relaxed whitespace-pre-wrap">
+                {campaign.messageTemplate || 'No message available'}
               </div>
             </div>
+          </div>
 
-            {/* File Attachment */}
-            <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-5">
-              <h3 className="text-[#483d8b] font-semibold mb-4 text-sm">
+          {/* 5. File Attachment */}
+          <div className="bg-white rounded-xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-50 p-4 flex flex-col justify-between">
+            <div>
+              <h3 className="text-[#483d8b] font-semibold mb-2.5 text-xs uppercase tracking-wider">
                 {campaign.fileUrl
                   ? campaign.fileUrl.toLowerCase().endsWith('.pdf')
                     ? 'PDF Document'
                     : 'Image'
                   : 'Attachment'}
               </h3>
-              <div className="flex justify-center">
+              <div className="flex items-center justify-center">
                 {campaign.fileUrl ? (
                   campaign.fileUrl.toLowerCase().endsWith('.pdf') ? (
-                    <a
-                      href={campaign.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block h-48 w-36 bg-gray-50 flex flex-col items-center justify-center rounded-lg border border-gray-200 hover:border-[var(--color-primary)] hover:bg-purple-50 transition-colors cursor-pointer group"
+                    <button
+                      type="button"
+                      onClick={() => setPreviewModalOpen(true)}
+                      className="w-full h-20 bg-gray-50 flex flex-col items-center justify-center rounded-lg border border-gray-200 hover:border-[#8b5cf6] hover:bg-purple-50 transition-colors cursor-pointer group"
+                      title="Click to preview PDF"
                     >
                       <svg
-                        className="w-12 h-12 text-red-500 mb-2"
+                        className="w-7 h-7 text-red-500 mb-1"
                         fill="currentColor"
                         viewBox="0 0 24 24"
                       >
                         <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h6v6h6v10H6z" />
                         <path d="M8 15h3v2H8zm0-3h8v2H8zm0 6h8v2H8z" />
                       </svg>
-                      <div className="text-xs text-gray-500 font-medium text-center px-2 group-hover:text-[var(--color-primary)]">
-                        View PDF
+                      <div className="text-[10px] text-gray-500 font-medium group-hover:text-[#8b5cf6]">
+                        Preview PDF
                       </div>
-                    </a>
+                    </button>
                   ) : (
-                    <a
-                      href={campaign.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => setPreviewModalOpen(true)}
+                      className="block cursor-pointer group focus:outline-hidden"
+                      title="Click to preview image"
                     >
                       <img
                         src={campaign.fileUrl}
                         alt="Attachment"
-                        className="h-48 object-contain rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                        className="h-20 max-w-full object-contain rounded-lg shadow-2xs group-hover:shadow-md group-hover:scale-105 transition-all"
                       />
-                    </a>
+                    </button>
                   )
                 ) : (
-                  <div className="text-xs text-gray-400 py-10">
+                  <div className="text-[11px] text-gray-400 py-6 text-center">
                     No file attached
                   </div>
                 )}
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Right Column */}
-          <div className="w-full xl:w-2/3 flex flex-col gap-5">
-            {/* Stat Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {/* Campaign Metrics & Contacts Section */}
+        <div className="flex flex-col gap-5">
+          {/* Stat Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {[
                 {
                   label: 'Total Recipients',
                   value: campaign.stats?.totalRecipients || 0,
-                  icon: <MessageSquare size={16} />
+                  icon: <Users size={16} strokeWidth={2.2} />,
+                  cardBg: 'bg-[#f4f2f9]',
+                  iconBg: 'bg-[#d9c9f2]',
+                  iconColor: 'text-[#6b3ba6]'
                 },
                 {
                   label: 'In Queue',
                   value: campaign.stats?.inQueue || 0,
-                  icon: <MessageSquare size={16} />,
-                  subIcon: (
-                    <Clock
-                      size={10}
-                      className="absolute -bottom-1 -right-1 bg-[#e1e7f0] rounded-full"
-                    />
-                  )
+                  icon: <Clock size={16} strokeWidth={2.2} />,
+                  cardBg: 'bg-[#fcf8f2]',
+                  iconBg: 'bg-[#dfd8bf]',
+                  iconColor: 'text-[#855e16]'
                 },
                 {
                   label: 'Sent',
                   value: campaign.stats?.sent || 0,
-                  icon: <Send size={16} />
+                  icon: <Send size={15} strokeWidth={2.2} />,
+                  cardBg: 'bg-[#f1f4fd]',
+                  iconBg: 'bg-[#bbbfc7]',
+                  iconColor: 'text-[#2b59c3]'
                 },
                 {
                   label: 'Delivered',
                   value: campaign.stats?.delivered || 0,
-                  icon: <MessageSquare size={16} />,
-                  subIcon: (
-                    <CheckCircle2
-                      size={10}
-                      className="absolute -bottom-1 -right-1 bg-[#e1e7f0] rounded-full"
-                    />
-                  )
+                  icon: <Check size={16} strokeWidth={2.6} />,
+                  cardBg: 'bg-[#f4f8f5]',
+                  iconBg: 'bg-[#91be9b]',
+                  iconColor: 'text-[#1d7039]'
                 },
                 {
                   label: 'Seen',
                   value: campaign.stats?.seen || 0,
-                  icon: <MessageSquare size={16} />,
-                  subIcon: (
-                    <Eye
-                      size={10}
-                      className="absolute -bottom-1 -right-1 bg-[#e1e7f0] rounded-full"
-                    />
-                  )
+                  icon: <Eye size={16} strokeWidth={2.2} />,
+                  cardBg: 'bg-[#f6f1fd]',
+                  iconBg: 'bg-[#c1a8ed]',
+                  iconColor: 'text-[#5d309e]'
                 },
                 {
                   label: 'Failed',
                   value: campaign.stats?.failed || 0,
-                  icon: <MessageSquare size={16} />,
-                  subIcon: (
-                    <XCircle
-                      size={10}
-                      className="absolute -bottom-1 -right-1 bg-[#e1e7f0] rounded-full"
-                    />
-                  )
+                  icon: <X size={16} strokeWidth={2.6} />,
+                  cardBg: 'bg-[#fdf4f5]',
+                  iconBg: 'bg-[#f7d2d0]',
+                  iconColor: 'text-[#c52828]'
                 },
                 {
                   label: 'Invalid',
                   value: campaign.stats?.invalid || 0,
-                  icon: <MessageSquare size={16} />,
-                  subIcon: (
-                    <AlertCircle
-                      size={10}
-                      className="absolute -bottom-1 -right-1 bg-[#e1e7f0] rounded-full"
-                    />
-                  )
+                  icon: <Ban size={16} strokeWidth={2.2} />,
+                  cardBg: 'bg-[#f5f5f8]',
+                  iconBg: 'bg-[#91919d]',
+                  iconColor: 'text-[#475569]'
                 }
               ].map((stat, idx) => (
                 <div
                   key={idx}
-                  className="bg-[#f2f6fa] rounded-xl p-5 flex justify-between items-start shadow-sm border border-gray-50"
+                  className={`${stat.cardBg} rounded-xl px-3.5 py-2.5 min-h-[48px] flex items-center gap-3 border border-transparent hover:border-black/5 transition-all`}
                 >
-                  <div>
-                    <div className="text-lg font-bold text-gray-900 mb-1">
+                  <div className={`w-8 h-8 rounded-full ${stat.iconBg} ${stat.iconColor} flex items-center justify-center shrink-0`}>
+                    {stat.icon}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-gray-900 leading-none">
                       {stat.value}
                     </div>
-                    <div className="text-[11px] text-gray-500">
+                    <div className="text-[11px] font-medium text-gray-500 leading-none mt-1 whitespace-nowrap">
                       {stat.label}
                     </div>
-                  </div>
-                  <div className="bg-[#e1e7f0] p-2 rounded-lg text-gray-600 relative">
-                    {stat.icon}
-                    {stat.subIcon}
                   </div>
                 </div>
               ))}
@@ -1075,7 +1201,6 @@ const CampaignDetails = () => {
           </div>
         </div>
       </div>
-    </div>
   );
 };
 
