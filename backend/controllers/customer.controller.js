@@ -37,11 +37,16 @@ export const getCustomerLookup = async (req, res) => {
 
 export const createCustomer = async (req, res) => {
   try {
-    const { profile, userId } = req.body;
+    const { profile, userId, whatsapp } = req.body;
     
     const customer = new Customer({
       userId: userId || req.userId,
-      profile
+      profile,
+      whatsapp: {
+        status: 'Disconnected',
+        mobileNo: whatsapp?.mobileNo || profile?.mobile || '',
+        provider: whatsapp?.provider || 'wwebjs'
+      }
     });
     
     await customer.save();
@@ -63,9 +68,17 @@ export const getCustomerById = async (req, res) => {
 
 export const updateCustomer = async (req, res) => {
   try {
+    const updateData = { ...req.body };
+    if (updateData.whatsapp && typeof updateData.whatsapp === 'object') {
+      if ('mobileNo' in updateData.whatsapp) {
+        updateData['whatsapp.mobileNo'] = updateData.whatsapp.mobileNo;
+      }
+      delete updateData.whatsapp;
+    }
+
     const customer = await Customer.findByIdAndUpdate(
       req.params.id, 
-      req.body, 
+      updateData, 
       { returnDocument: 'after', runValidators: true }
     );
     if (!customer) return ApiResponse.error(res, 'Customer not found', 404);

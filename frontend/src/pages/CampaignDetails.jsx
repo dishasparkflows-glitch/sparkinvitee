@@ -28,6 +28,7 @@ import {
 import api from '../services/api';
 import Dropdown from '../components/Dropdown';
 import ConfirmationModal from '../components/ConfirmationModal';
+import Pagination from '../components/Pagination';
 import { toast } from '../utils/toast';
 
 const CampaignDetails = () => {
@@ -106,7 +107,7 @@ const CampaignDetails = () => {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const fetchCampaign = useCallback(() => {
     api
@@ -264,7 +265,6 @@ const CampaignDetails = () => {
     return matchesTab && matchesSearch && matchesStatus;
   });
 
-  const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
   const paginatedContacts = filteredContacts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -1057,78 +1057,18 @@ const CampaignDetails = () => {
                 </div>
 
                 {/* Pagination */}
-                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/30">
-                  <div className="text-[11px] text-gray-400 font-medium">
-                    Displaying{' '}
-                    {filteredContacts.length > 0
-                      ? (currentPage - 1) * itemsPerPage + 1
-                      : 0}{' '}
-                    to{' '}
-                    {Math.min(
-                      currentPage * itemsPerPage,
-                      filteredContacts.length
-                    )}{' '}
-                    of {filteredContacts.length} Customers
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5 text-xs font-medium">
-                      <button
-                        onClick={() =>
-                          setCurrentPage((p) => Math.max(1, p - 1))
-                        }
-                        disabled={currentPage === 1}
-                        className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                      >
-                        &lt;
-                      </button>
-
-                      {Array.from(
-                        { length: Math.min(5, totalPages) },
-                        (_, i) => {
-                          // Simple sliding window for pagination
-                          let pageNum = i + 1;
-                          if (totalPages > 5 && currentPage > 3) {
-                            pageNum = currentPage - 2 + i;
-                            if (pageNum > totalPages)
-                              pageNum = totalPages - (4 - i);
-                          }
-                          return (
-                            <button
-                              key={pageNum}
-                              onClick={() => setCurrentPage(pageNum)}
-                              className={`w-6 h-6 flex items-center justify-center rounded shadow-sm ${currentPage === pageNum ? 'bg-[#5b528b] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-                            >
-                              {pageNum}
-                            </button>
-                          );
-                        }
-                      )}
-
-                      {totalPages > 5 && currentPage < totalPages - 2 && (
-                        <>
-                          <span className="text-gray-400 mx-0.5">..</span>
-                          <button
-                            onClick={() => setCurrentPage(totalPages)}
-                            className="w-6 h-6 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded"
-                          >
-                            {totalPages}
-                          </button>
-                        </>
-                      )}
-
-                      <button
-                        onClick={() =>
-                          setCurrentPage((p) => Math.min(totalPages, p + 1))
-                        }
-                        disabled={
-                          currentPage === totalPages || totalPages === 0
-                        }
-                        className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                      >
-                        &gt;
-                      </button>
-                    </div>
-                  </div>
+                <div className="px-6 pb-6">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalItems={filteredContacts.length}
+                    itemsPerPage={itemsPerPage}
+                    onPageChange={(page) => setCurrentPage(page)}
+                    onItemsPerPageChange={(val) => {
+                      setItemsPerPage(val);
+                      setCurrentPage(1);
+                    }}
+                    label="Customers"
+                  />
                 </div>
               </div>
             </div>

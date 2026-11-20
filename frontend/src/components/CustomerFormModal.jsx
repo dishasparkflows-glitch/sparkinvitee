@@ -3,7 +3,7 @@ import { X, Loader2 } from 'lucide-react';
 import api from '../services/api';
 
 const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
-  const [formData, setFormData] = useState({ name: '', email: '', mobile: '', address: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', mobile: '', whatsappMobile: '', address: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -13,10 +13,11 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
         name: initialData.profile?.name || '',
         email: initialData.profile?.email || '',
         mobile: initialData.profile?.mobile || '',
+        whatsappMobile: initialData.whatsapp?.mobileNo || initialData.profile?.mobile || '',
         address: initialData.profile?.address || ''
       });
     } else {
-      setFormData({ name: '', email: '', mobile: '', address: '' });
+      setFormData({ name: '', email: '', mobile: '', whatsappMobile: '', address: '' });
     }
     setError(null);
   }, [initialData, isOpen]);
@@ -36,6 +37,9 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
           email: formData.email,
           mobile: formData.mobile,
           address: formData.address
+        },
+        whatsapp: {
+          mobileNo: formData.whatsappMobile || formData.mobile
         }
       };
 
@@ -126,6 +130,20 @@ const CustomerFormModal = ({ isOpen, onClose, onSave, initialData }) => {
               value={formData.mobile} 
               onChange={e => setFormData({ ...formData, mobile: e.target.value })} 
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              WhatsApp Number
+            </label>
+            <input 
+              type="text" 
+              placeholder="e.g. 9825032534 (Leave blank to use Mobile Number)"
+              className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:border-[#4c3963] focus:ring-1 focus:ring-[#4c3963]" 
+              value={formData.whatsappMobile} 
+              onChange={e => setFormData({ ...formData, whatsappMobile: e.target.value })} 
+            />
+            <p className="text-xs text-gray-400 mt-1">Number used for WhatsApp status and campaigns</p>
           </div>
 
           <div>

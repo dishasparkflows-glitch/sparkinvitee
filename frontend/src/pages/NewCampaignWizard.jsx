@@ -579,14 +579,39 @@ const NewCampaignWizard = () => {
                         </button>
                       </div>
                       
-                      <div className="mb-2">
+                      <div className="mb-3">
                         <p className="text-sm text-gray-600 font-medium">Enter numbers manually (one per line)</p>
-                        <p className="text-xs text-gray-500 mt-1">Format: Name, Number, Var1, Var2, Var3, Var4, Var5</p>
+                        <p className="text-xs text-gray-500 mb-2">Format: Name, Number, Var1, Var2, Var3, Var4, Var5</p>
+
+                        {/* Clickable Dummy Record */}
+                        <div 
+                          onClick={() => {
+                            const dummyRecord = 'Radhika Merchant, 9946245623, Guest, VIP, None, None, None';
+                            setCampaignData(prev => ({
+                              ...prev,
+                              manualContactsText: prev.manualContactsText && prev.manualContactsText.trim()
+                                ? `${prev.manualContactsText.trim()}\n${dummyRecord}`
+                                : dummyRecord
+                            }));
+                          }}
+                          className="px-3 py-2 bg-purple-50/70 hover:bg-purple-100 border border-dashed border-purple-300 rounded-lg flex items-center justify-between cursor-pointer transition-all group"
+                          title="Click to insert this dummy record"
+                        >
+                          <div className="flex items-center gap-2 text-xs font-mono text-gray-700 truncate">
+                            <span className="text-[10px] font-sans font-semibold uppercase tracking-wider bg-purple-200 text-[#4c3963] px-1.5 py-0.5 rounded">
+                              Dummy Record
+                            </span>
+                            <span className="truncate">Radhika Merchant, 9946245623, Guest, VIP, None, None, None</span>
+                          </div>
+                          <span className="text-xs font-sans font-medium text-[var(--color-primary)] group-hover:underline whitespace-nowrap ml-3">
+                            + Click to Add
+                          </span>
+                        </div>
                       </div>
                       
                       <textarea 
-                        className="w-full h-64 p-4 border border-gray-300 rounded-lg focus:outline-none focus:border-[var(--color-primary)] font-mono text-sm leading-relaxed"
-                        placeholder={`Radhika Merchant, 9946245623, Guest, VIP, None, None, None\nAnant Ambani, 9946245624, VIP, VIP, None, None, None`}
+                        className="w-full h-56 p-4 border border-gray-300 rounded-lg focus:outline-none focus:border-[var(--color-primary)] font-mono text-sm leading-relaxed"
+                        placeholder="Radhika Merchant, 9946245623, Guest, VIP, None, None, None"
                         value={campaignData.manualContactsText}
                         onChange={(e) => setCampaignData({...campaignData, manualContactsText: e.target.value})}
                       ></textarea>

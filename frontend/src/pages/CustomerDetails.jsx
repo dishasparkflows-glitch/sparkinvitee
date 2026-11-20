@@ -162,9 +162,11 @@ const CustomerDetails = () => {
             <h2 className="text-lg font-bold text-[#4c3963] mb-6">Personal Details</h2>
             <button 
               onClick={() => setIsEditModalOpen(true)}
-              className="absolute top-6 right-6 text-[var(--color-primary)] font-medium text-sm hover:underline cursor-pointer"
+              className="absolute top-6 right-6 flex items-center gap-1.5 text-[var(--color-primary)] hover:text-[#3b2d4f] font-medium text-sm hover:underline cursor-pointer transition-colors"
+              title="Edit Personal Details"
             >
-              Edit
+              <Edit size={16} />
+              <span>Edit</span>
             </button>
             
             <div className="flex items-center gap-4 mb-6">
@@ -222,8 +224,18 @@ const CustomerDetails = () => {
                 <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-500 flex items-center justify-center">
                   <Phone size={20} />
                 </div>
-                <div>
-                  <div className="text-[#4c3963] font-bold text-sm">Mobile No</div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#4c3963] font-bold text-sm">Mobile No</span>
+                    <button
+                      onClick={() => setIsEditModalOpen(true)}
+                      className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Edit WhatsApp Number"
+                    >
+                      <Edit size={12} />
+                      <span>Edit</span>
+                    </button>
+                  </div>
                   <div className="text-xs text-gray-500 font-medium">{customer.whatsapp?.mobileNo || '-'}</div>
                 </div>
               </div>
@@ -314,6 +326,7 @@ const CustomerDetails = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-200 text-xs text-[#4c3963] font-bold tracking-wider uppercase">
+                  <th className="py-3 px-2 whitespace-nowrap">Sr. No.</th>
                   <th className="py-3 px-2">Name</th>
                   <th className="py-3 px-2">Send Type</th>
                   <th className="py-3 px-2">Status</th>
@@ -324,12 +337,13 @@ const CustomerDetails = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredCampaigns.map((c) => (
+                {filteredCampaigns.map((c, index) => (
                   <tr 
                     key={c._id} 
                     className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" 
                     onClick={() => navigate(c.status === 'Drafted' ? `/campaigns/edit/${c._id}` : `/campaigns/${c._id}`)}
                   >
+                    <td className="py-4 px-2 text-sm text-gray-400 font-medium whitespace-nowrap">{index + 1}</td>
                     <td className="py-4 px-2 text-sm text-gray-500 font-medium">{c.name}</td>
                     <td className="py-4 px-2 text-sm text-gray-500 font-medium">{c.type}</td>
                     <td className="py-4 px-2">
@@ -383,7 +397,7 @@ const CustomerDetails = () => {
                 ))}
                 {filteredCampaigns.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="text-center py-12 text-sm text-gray-500 font-medium">
+                    <td colSpan="8" className="text-center py-12 text-sm text-gray-500 font-medium">
                       No {activeTab !== 'All' ? activeTab.toLowerCase() : ''} campaigns found.
                     </td>
                   </tr>
