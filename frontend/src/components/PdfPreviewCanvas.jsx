@@ -53,24 +53,14 @@ const PdfPreviewCanvas = ({
       : existingFileUrl?.toLowerCase().includes('.pdf')
   );
 
-  // Memoize stable preview URL so it doesn't regenerate on every render
-  const previewUrl = useMemo(() => {
-    if (file) return URL.createObjectURL(file);
+  // Stable remote URL for draft files
+  const remoteUrl = useMemo(() => {
     if (existingFileUrl?.startsWith('http')) return existingFileUrl;
     if (existingFileUrl) {
       return `${import.meta.env.VITE_CF_URL || 'https://assets.npjnxt.com'}/${existingFileUrl}`;
     }
     return null;
-  }, [file, existingFileUrl]);
-
-  // Cleanup object URL when file changes or component unmounts
-  useEffect(() => {
-    return () => {
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [previewUrl]);
+  }, [existingFileUrl]);
 
   // 1. Load Document (PDF or Image)
   useEffect(() => {
@@ -91,16 +81,54 @@ const PdfPreviewCanvas = ({
       setPageImageUrl(null);
 
       if (!isPdf) {
-        // Image document handling
+        // Image document handling: convert File to base64 Data URL (immune to blob URL revocation)
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            if (isCancelled) return;
+            const dataUrl = e.target.result;
+            const img = new Image();
+            img.onload = () => {
+              if (isCancelled) return;
+              setPdfDoc(null);
+              setNumPages(1);
+              setPageSize({ width: img.naturalWidth, height: img.naturalHeight });
+              setPageImageUrl(dataUrl);
+              setThumbnails([{ page: 1, url: dataUrl }]);
+              setLoading(false);
+            };
+            img.onerror = () => {
+              if (!isCancelled) {
+                setError('Failed to load image preview');
+                setLoading(false);
+              }
+            };
+            img.src = dataUrl;
+          };
+          reader.onerror = () => {
+            if (!isCancelled) {
+              setError('Failed to read image file');
+              setLoading(false);
+            }
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+
+        // Remote existing image URL
+        if (!remoteUrl) {
+          setLoading(false);
+          return;
+        }
+
         const img = new Image();
-        img.src = previewUrl;
         img.onload = () => {
           if (!isCancelled) {
             setPdfDoc(null);
             setNumPages(1);
             setPageSize({ width: img.naturalWidth, height: img.naturalHeight });
-            setPageImageUrl(previewUrl);
-            setThumbnails([{ page: 1, url: previewUrl }]);
+            setPageImageUrl(remoteUrl);
+            setThumbnails([{ page: 1, url: remoteUrl }]);
             setLoading(false);
           }
         };
@@ -110,6 +138,7 @@ const PdfPreviewCanvas = ({
             setLoading(false);
           }
         };
+        img.src = remoteUrl;
         return;
       }
 
@@ -126,7 +155,7 @@ const PdfPreviewCanvas = ({
           });
         } else {
           loadingTask = pdfjsLib.getDocument({ 
-            url: previewUrl,
+            url: remoteUrl,
             cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '3.11.174'}/cmaps/`,
             cMapPacked: true
           });
@@ -152,7 +181,7 @@ const PdfPreviewCanvas = ({
     return () => {
       isCancelled = true;
     };
-  }, [file, existingFileUrl, isPdf, previewUrl]);
+  }, [file, existingFileUrl, isPdf, remoteUrl]);
 
   // 2. Render Main Page
   const renderCurrentPage = useCallback(async () => {
@@ -298,11 +327,27 @@ const PdfPreviewCanvas = ({
     const handleResize = () => {
       if (isPdf && pdfDoc) {
         renderCurrentPage();
+      } else if (!isPdf && pageSize.width > 0) {
+        const container = containerRef.current;
+        const availWidth = Math.max(300, (container?.clientWidth || 550) - 48);
+        const availHeight = Math.max(350, (container?.clientHeight || 550) - 48);
+        let scale = 1;
+        if (fitMode === 'fitWidth') {
+          scale = (availWidth / pageSize.width) * zoomScale;
+        } else {
+          const scaleW = availWidth / pageSize.width;
+          const scaleH = availHeight / pageSize.height;
+          scale = Math.min(scaleW, scaleH) * zoomScale;
+        }
+        setDisplaySize({
+          width: Math.round(pageSize.width * scale),
+          height: Math.round(pageSize.height * scale)
+        });
       }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [isPdf, pdfDoc, renderCurrentPage]);
+  }, [isPdf, pdfDoc, pageSize, fitMode, zoomScale, renderCurrentPage]);
 
   // Drag & drop handlers
   const handlePointerDown = (e, item) => {
@@ -634,11 +679,18 @@ const PdfPreviewCanvas = ({
               className="w-full cursor-pointer rounded-lg border-2 border-[#4c3963] ring-2 ring-purple-100 p-1 bg-white shadow-xs flex flex-col items-center"
             >
               <div className="w-full h-28 bg-[#f8f9fa] rounded overflow-hidden flex items-center justify-center p-1">
-                <img 
-                  src={previewUrl} 
-                  alt="Thumbnail" 
-                  className="w-full h-full object-contain pointer-events-none rounded shadow-2xs" 
-                />
+                {pageImageUrl || remoteUrl ? (
+                  <img 
+                    src={pageImageUrl || remoteUrl} 
+                    alt="Thumbnail" 
+                    className="w-full h-full object-contain pointer-events-none rounded shadow-2xs" 
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-gray-400">
+                    <FileText size={20} />
+                    <span className="text-[10px]">Image</span>
+                  </div>
+                )}
               </div>
               <span className="text-[11px] font-semibold mt-1 text-[#4c3963]">
                 Image

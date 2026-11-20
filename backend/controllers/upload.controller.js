@@ -3,7 +3,9 @@ import ApiResponse from '../utils/ApiResponse.js';
 
 export const getUploadUrl = async (req, res) => {
     try {
-        const customerid = req.body.customerId;
+        const customerid = (req.body.customerId && typeof req.body.customerId === 'object')
+            ? req.body.customerId._id
+            : req.body.customerId;
         const uploadType = req.body.uploadType || 'misc';
         const fileType = req.body.fileType || 'application/octet-stream';
 
@@ -19,7 +21,11 @@ export const getUploadUrl = async (req, res) => {
             "application/pdf": "pdf", "text/plain": "txt",
             "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav"
         };
-        const ext = mimeToExt[fileType] ? `.${mimeToExt[fileType]}` : '';
+        let ext = mimeToExt[fileType] ? `.${mimeToExt[fileType]}` : '';
+        if (!ext && req.body.fileName) {
+            const dotIdx = req.body.fileName.lastIndexOf('.');
+            if (dotIdx !== -1) ext = req.body.fileName.substring(dotIdx).toLowerCase();
+        }
         
         const key = `${keyPath}/${timestamp}-${Math.random().toString(36).substring(7)}${ext}`;
 

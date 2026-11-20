@@ -9,17 +9,21 @@ let _r2Client = null;
 export const getR2Client = () => {
     if (_r2Client) return _r2Client;
 
-    if (!process.env.CLOUDFLARE_ENDPOINT || !process.env.CLOUDFLARE_ACCESS_KEY_ID || !process.env.CLOUDFLARE_ACCESS_KEY) {
+    const secretKey = process.env.CLOUDFLARE_SECRET_ACCESS_KEY;
+    const accessKeyId = process.env.CLOUDFLARE_ACCESS_KEY_ID;
+    const endpoint = process.env.CLOUDFLARE_ENDPOINT;
+
+    if (!endpoint || !accessKeyId || !secretKey) {
         throw new Error('Cloudflare R2 credentials are not configured in .env');
     }
 
     _r2Client = new S3Client({
         region: 'auto',
-        endpoint: process.env.CLOUDFLARE_ENDPOINT,
+        endpoint: endpoint,
         forcePathStyle: true,
         credentials: {
-            accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
-            secretAccessKey: process.env.CLOUDFLARE_ACCESS_KEY,
+            accessKeyId: accessKeyId,
+            secretAccessKey: secretKey,
         },
     });
 
@@ -47,7 +51,7 @@ export const uploadBufferToR2 = async (buffer, fileName, contentType = 'applicat
         await client.send(command);
 
         // Return the public URL
-        const base = (process.env.CLOUDFLARE_URL || '').replace(/\/+$/, '');
+        const base = (process.env.CLOUDFLARE_R2_PUBLIC_URL || '').replace(/\/+$/, '');
         return `${base}/${fileName}`;
 
     } catch (error) {
@@ -73,7 +77,7 @@ export const getPresignedUploadUrl = async (fileName, contentType, expiresIn = 3
         });
 
         const uploadUrl = await getSignedUrl(client, command, { expiresIn });
-        const base = (process.env.CLOUDFLARE_URL || '').replace(/\/+$/, '');
+        const base = (process.env.CLOUDFLARE_R2_PUBLIC_URL || process.env.CLOUDFLARE_URL || '').replace(/\/+$/, '');
         const publicUrl = `${base}/${fileName}`;
 
         return { uploadUrl, publicUrl, key: fileName };

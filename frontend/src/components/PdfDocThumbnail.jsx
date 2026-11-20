@@ -16,20 +16,11 @@ const PdfDocThumbnail = ({ file, url, className = 'w-full h-full object-contain'
       : url?.toLowerCase().includes('.pdf')
   );
 
-  const resolvedUrl = useMemo(() => {
-    if (file) return URL.createObjectURL(file);
+  const remoteUrl = useMemo(() => {
     if (url?.startsWith('http')) return url;
     if (url) return `${import.meta.env.VITE_CF_URL || 'https://assets.npjnxt.com'}/${url}`;
     return null;
-  }, [file, url]);
-
-  useEffect(() => {
-    return () => {
-      if (resolvedUrl && resolvedUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(resolvedUrl);
-      }
-    };
-  }, [resolvedUrl]);
+  }, [url]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -40,7 +31,22 @@ const PdfDocThumbnail = ({ file, url, className = 'w-full h-full object-contain'
     }
 
     if (!isPdf) {
-      setThumbUrl(resolvedUrl);
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (!isCancelled) {
+            setThumbUrl(e.target.result);
+            setLoading(false);
+          }
+        };
+        reader.onerror = () => {
+          if (!isCancelled) setLoading(false);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      setThumbUrl(remoteUrl);
       setLoading(false);
       return;
     }
@@ -51,10 +57,11 @@ const PdfDocThumbnail = ({ file, url, className = 'w-full h-full object-contain'
         let loadingTask;
         if (file) {
           const arrayBuffer = await file.arrayBuffer();
+          if (isCancelled) return;
           loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         } else {
           loadingTask = pdfjsLib.getDocument({
-            url: resolvedUrl,
+            url: remoteUrl,
             cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '3.11.174'}/cmaps/`,
             cMapPacked: true
           });
@@ -89,7 +96,7 @@ const PdfDocThumbnail = ({ file, url, className = 'w-full h-full object-contain'
     return () => {
       isCancelled = true;
     };
-  }, [file, url, isPdf, resolvedUrl]);
+  }, [file, url, isPdf, remoteUrl]);
 
   if (loading) {
     return (

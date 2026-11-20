@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Check, ArrowLeft, X, FileText, Info, FolderOpen, Loader2, Users, MessageSquare, Paperclip, Clock, Eye, ExternalLink } from 'lucide-react';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
 import Dropdown from '../components/Dropdown';
+import DateSelection from '../components/DateSelection';
 import PdfPreviewCanvas from '../components/PdfPreviewCanvas';
 import PdfDocThumbnail from '../components/PdfDocThumbnail';
 import { toast } from '../utils/toast';
@@ -48,7 +49,7 @@ const NewCampaignWizard = () => {
   const { id } = useParams();
   const isEditing = !!id;
 
-  const getAttachmentInfo = () => {
+  const attachmentInfo = useMemo(() => {
     if (campaignData.file) {
       const isPdf = campaignData.file.type?.includes('pdf') || campaignData.file.name?.toLowerCase().endsWith('.pdf');
       const url = URL.createObjectURL(campaignData.file);
@@ -73,7 +74,17 @@ const NewCampaignWizard = () => {
       };
     }
     return null;
-  };
+  }, [campaignData.file, campaignData.existingFileUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (attachmentInfo?.url && campaignData.file) {
+        URL.revokeObjectURL(attachmentInfo.url);
+      }
+    };
+  }, [attachmentInfo, campaignData.file]);
+
+  const getAttachmentInfo = useCallback(() => attachmentInfo, [attachmentInfo]);
 
   useEffect(() => {
     if (isEditing) {
@@ -188,6 +199,9 @@ const NewCampaignWizard = () => {
       if (!campaignData.messageTemplate || campaignData.messageTemplate.trim() === '') {
         errors.messageTemplate = 'Message template is required.';
       }
+      if (isScheduled && !campaignData.scheduleDateTime) {
+        errors.scheduleDateTime = 'Please select a date and time for the scheduled campaign.';
+      }
     }
 
     return errors;
@@ -247,12 +261,36 @@ const NewCampaignWizard = () => {
     try {
       let fileUrl = campaignData.existingFileUrl || null;
       if (campaignData.file) {
-        // Upload via backend → R2 (avoids browser CORS issues with Cloudflare)
-        const formData = new FormData();
-        formData.append('file', campaignData.file);
-        formData.append('customerId', campaignData.customerId);
-        const uploadRes = await api.post('/campaigns/upload-file', formData);
-        fileUrl = uploadRes.data.fileUrl; // R2 key stored in DB
+        // 1. Call backend /api/uploads/url to generate presigned upload URL
+        const uploadUrlRes = await api.post('/uploads/url', {
+          customerId: campaignData.customerId,
+          uploadType: 'campaigns',
+          fileType: campaignData.file.type || 'application/octet-stream',
+          fileName: campaignData.file.name
+        });
+
+        const uploadData = uploadUrlRes.data?.data || uploadUrlRes.data;
+        const { uploadUrl, publicUrl, key } = uploadData;
+
+        if (!uploadUrl) {
+          throw new Error('Failed to generate Cloudflare upload URL from server');
+        }
+
+        // 2. Direct PUT upload to Cloudflare R2 via presigned URL
+        const r2Res = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': campaignData.file.type || 'application/octet-stream'
+          },
+          body: campaignData.file
+        });
+
+        if (!r2Res.ok) {
+          throw new Error(`Direct upload to Cloudflare failed (${r2Res.status})`);
+        }
+
+        // 3. Store the public URL in the campaign payload
+        fileUrl = publicUrl || key;
       }
 
       let parsedContacts = campaignData.contacts; // Now using already parsed contacts
@@ -264,6 +302,7 @@ const NewCampaignWizard = () => {
         status: status,
         delayFrom: campaignData.delayFrom,
         delayTo: campaignData.delayTo,
+        scheduleDateTime: isScheduled ? campaignData.scheduleDateTime : null,
         messageTemplate: campaignData.messageTemplate,
         customPdfName: campaignData.customPdfName,
         fileUrl: fileUrl,
@@ -410,15 +449,46 @@ const NewCampaignWizard = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Campaign Type</label>
-                  <div className="flex gap-4">
-                    <label className={`flex-1 border p-4 rounded-lg cursor-pointer flex flex-col items-center justify-center text-center gap-2 transition-colors ${campaignData.type === 'Send With Document' ? 'border-[var(--color-primary)] bg-purple-50' : 'border-gray-200 hover:bg-gray-50'}`}>
-                      <input type="radio" name="type" className="sr-only" checked={campaignData.type === 'Send With Document'} onChange={() => setCampaignData({...campaignData, type: 'Send With Document'})} />
+                  <div className="flex gap-4" role="radiogroup" aria-label="Campaign Type">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={campaignData.type === 'Send With Document'}
+                      onClick={() => setCampaignData({ ...campaignData, type: 'Send With Document' })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setCampaignData({ ...campaignData, type: 'Only Message' });
+                        }
+                      }}
+                      className={`flex-1 border p-4 rounded-lg cursor-pointer flex flex-col items-center justify-center text-center gap-2 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2 ${
+                        campaignData.type === 'Send With Document'
+                          ? 'border-[var(--color-primary)] bg-purple-50 shadow-xs'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
                       <span className="font-medium text-gray-900">Send With Document</span>
-                    </label>
-                    <label className={`flex-1 border p-4 rounded-lg cursor-pointer flex flex-col items-center justify-center text-center gap-2 transition-colors ${campaignData.type === 'Only Message' ? 'border-[var(--color-primary)] bg-purple-50' : 'border-gray-200 hover:bg-gray-50'}`}>
-                      <input type="radio" name="type" className="sr-only" checked={campaignData.type === 'Only Message'} onChange={() => setCampaignData({...campaignData, type: 'Only Message'})} />
+                    </button>
+
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={campaignData.type === 'Only Message'}
+                      onClick={() => setCampaignData({ ...campaignData, type: 'Only Message' })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setCampaignData({ ...campaignData, type: 'Send With Document' });
+                        }
+                      }}
+                      className={`flex-1 border p-4 rounded-lg cursor-pointer flex flex-col items-center justify-center text-center gap-2 transition-all focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2 ${
+                        campaignData.type === 'Only Message'
+                          ? 'border-[var(--color-primary)] bg-purple-50 shadow-xs'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
                       <span className="font-medium text-gray-900">Only Message</span>
-                    </label>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -941,13 +1011,27 @@ const NewCampaignWizard = () => {
                   </div>
                   
                   {isScheduled && (
-                    <div className="animate-fade-in-up">
-                      <input 
-                        type="datetime-local" 
-                        className="w-full max-w-sm border border-[var(--color-primary)] bg-purple-50/30 rounded-md px-4 py-3 mt-4 focus:outline-none shadow-sm text-sm font-bold text-gray-700"
-                        value={campaignData.scheduleDateTime || ''}
-                        onChange={(e) => setCampaignData({...campaignData, scheduleDateTime: e.target.value})}
+                    <div className="animate-fade-in-up mt-4 space-y-1.5">
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">
+                        Schedule Date & Time <span className="text-red-500">*</span>
+                      </label>
+                      <DateSelection
+                        mode="single"
+                        showTime
+                        value={campaignData.scheduleDateTime}
+                        onChange={(val) => {
+                          setCampaignData({ ...campaignData, scheduleDateTime: val });
+                          if (validationErrors.scheduleDateTime) {
+                            setValidationErrors(prev => ({ ...prev, scheduleDateTime: null }));
+                          }
+                        }}
+                        placeholder="Select Schedule Date & Time"
+                        minDate={new Date()}
+                        className="w-full max-w-sm"
                       />
+                      {validationErrors.scheduleDateTime && (
+                        <p className="text-red-500 text-xs mt-1">{validationErrors.scheduleDateTime}</p>
+                      )}
                     </div>
                   )}
                 </div>
